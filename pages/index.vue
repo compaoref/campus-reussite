@@ -41,3 +41,13 @@
     </div>
   </div>
 </template>
+<script setup>
+import Logo from '~/components/Logo.vue'
+</script>
+
+<template>
+  <div>
+    <Logo />
+    <!-- Le reste de ta page -->
+  </div>
+</template>
