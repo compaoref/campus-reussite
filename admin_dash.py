@@ -2,59 +2,127 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.set_page_config(page_title="Admin - Campus Réussite", layout="wide")
+st.set_page_config(page_title="Campus Réussite", layout="wide")
 
-# --- SÉCURITÉ ADMIN ---
-def check_password():
-    if "authenticated" not in st.session_state:
-        st.title("🔐 Administration - Campus Réussite")
-        user_input = st.text_input("Nom d'administrateur")
-        pw_input = st.text_input("Mot de passe", type="password")
-        
-        if st.button("Se connecter"):
-            try:
-                admins = st.secrets["admin_accounts"]
-                if user_input in admins and pw_input == admins[user_input]:
-                    st.session_state.authenticated = True
-                    st.session_state.admin_name = user_input
-                    st.rerun()
+# --- STYLE ---
+st.markdown("""
+<style>
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0px 5px 20px rgba(0,0,0,0.05);
+}
+.stat {
+    font-size: 28px;
+    font-weight: bold;
+    color: #2E7D32;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- LOAD CSV (optimisé cache) ---
+@st.cache_data
+def load_data():
+    if os.path.exists("data_quizzes.csv"):
+        try:
+            return pd.read_csv("data_quizzes.csv", encoding="utf-8")
+        except:
+            return pd.read_csv("data_quizzes.csv", encoding="latin1")
+    return pd.DataFrame()
+
+df = load_data()
+
+# --- SESSION STATE ---
+if "answers" not in st.session_state:
+    st.session_state.answers = {}
+
+if "validated" not in st.session_state:
+    st.session_state.validated = {}
+
+if "score" not in st.session_state:
+    st.session_state.score = 0
+
+# --- SIDEBAR ---
+menu = st.sidebar.radio("Navigation", [
+    "🏠 Dashboard",
+    "🧠 Quiz",
+    "📊 Résultat"
+])
+
+# --- DASHBOARD ---
+if menu == "🏠 Dashboard":
+    st.title("📊 Tableau de bord")
+
+    col1, col2 = st.columns(2)
+
+    col1.markdown(f"""
+    <div class="card">
+        <div class="stat">{len(df)}</div>
+        <div>Total questions</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col2.markdown(f"""
+    <div class="card">
+        <div class="stat">{st.session_state.score}</div>
+        <div>Score actuel</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- QUIZ ---
+elif menu == "🧠 Quiz":
+    st.title("🧠 Test interactif")
+
+    if df.empty:
+        st.warning("Aucun quiz disponible")
+    else:
+        for i, row in df.iterrows():
+            st.markdown(f"### Question {i+1}")
+            st.write(row["question"])
+
+            options = [row["a"], row["b"], row["c"], row["d"]]
+
+            choix = st.radio(
+                "Choisis ta réponse",
+                options,
+                key=f"q_{i}"
+            )
+
+            st.session_state.answers[i] = choix
+
+            # Bouton valider individuel
+            if st.button(f"Valider Q{i+1}", key=f"val_{i}"):
+
+                if choix == row["reponse"]:
+                    st.success("✅ Bonne réponse")
+                    st.session_state.validated[i] = True
                 else:
-                    st.error("❌ Identifiants incorrects.")
-            except:
-                # Mode secours si secrets non configurés
-                if user_input == "admin" and pw_input == "1234":
-                    st.session_state.authenticated = True
-                    st.rerun()
-        return False
-    return True
+                    st.error(f"❌ Mauvaise réponse")
+                    st.info(f"Réponse correcte : {row['reponse']}")
+                    st.session_state.validated[i] = False
 
-if check_password():
-    st.sidebar.title(f"Salut, {st.session_state.get('admin_name', 'Major')} !")
-    menu = st.sidebar.radio("Navigation", ["📊 Statistiques", "📤 Importer des Quiz"])
+        st.write("---")
 
-    if menu == "📊 Statistiques":
-        st.title("🚀 Tableau de bord Campus Réussite")
-        if os.path.exists("data_quizzes.csv"):
-            try:
-                # Correction Unicode : on essaie UTF-8, puis Latin-1 si ça échoue
-                try:
-                    df_stats = pd.read_csv("data_quizzes.csv", encoding="utf-8")
-                except UnicodeDecodeError:
-                    df_stats = pd.read_csv("data_quizzes.csv", encoding="latin1")
-                
-                st.metric("Questions en ligne", len(df_stats))
-                st.write("### Aperçu des données")
-                st.dataframe(df_stats)
-            except Exception as e:
-                st.error(f"Erreur de lecture : {e}")
-        else:
-            st.warning("Aucun fichier de données trouvé. Veuillez importer un CSV.")
+        # Score global
+        if st.button("📊 Calculer le score"):
+            score = sum(1 for v in st.session_state.validated.values() if v)
+            st.session_state.score = score
+            st.success(f"🎯 Score : {score}/{len(df)}")
 
-    elif menu == "📤 Importer des Quiz":
-        st.title("📥 Mise à jour des Quiz")
-        uploaded_file = st.file_uploader("Choisir un fichier CSV", type="csv")
-        if uploaded_file:
-            df = pd.read_csv(uploaded_file)
-            if st.button("🚀 Publier sur la plateforme"):
-                df.to_csv("data_quizzes.csv", index=False, encoding="utf-8")
-                st.success("Base de données mise à jour ! Rebootez l'app apprenant si besoin.")
+# --- RESULTAT ---
+elif menu == "📊 Résultat":
+    st.title("📊 Résultat final")
+
+    st.markdown(f"""
+    <div class="card">
+        <div class="stat">{st.session_state.score}</div>
+        <div>Score obtenu</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("🔄 Recommencer"):
+        st.session_state.answers = {}
+        st.session_state.validated = {}
+        st.session_state.score = 0
+        st.success("Réinitialisé")
