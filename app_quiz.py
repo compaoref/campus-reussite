@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
 import os
-import json
 import re
 from datetime import datetime
-from pathlib import Path
 
 # Configuration de la page
 st.set_page_config(
@@ -13,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS personnalisé professionnel
+# CSS personnalisé
 st.markdown("""
 <style>
     * {
@@ -27,12 +25,10 @@ st.markdown("""
         background: linear-gradient(135deg, #f6f8fb 0%, #eef2f7 100%);
     }
     
-    /* Header */
     .header-container {
         background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
         color: white;
         padding: 2rem 1rem;
-        border-radius: 0;
         margin-bottom: 2rem;
         box-shadow: 0 8px 32px rgba(13, 110, 253, 0.15);
     }
@@ -70,7 +66,6 @@ st.markdown("""
         font-size: 2rem;
         font-weight: 700;
         margin-bottom: 0.3rem;
-        letter-spacing: -0.5px;
     }
     
     .header-text p {
@@ -98,33 +93,19 @@ st.markdown("""
         padding: 0 1rem 2rem 1rem;
     }
     
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-    }
-    
     .stat-card {
         background: white;
         padding: 1.5rem;
         border-radius: 12px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         text-align: center;
-        transition: all 0.3s ease;
         border-left: 4px solid #0d6efd;
-    }
-    
-    .stat-card:hover {
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-        transform: translateY(-4px);
     }
     
     .stat-number {
         font-size: 2rem;
         font-weight: 700;
         color: #0d6efd;
-        margin: 0;
     }
     
     .stat-label {
@@ -132,7 +113,6 @@ st.markdown("""
         font-size: 0.85rem;
         margin-top: 0.5rem;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     
     .quiz-container {
@@ -140,33 +120,6 @@ st.markdown("""
         border-radius: 14px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         padding: 2rem;
-    }
-    
-    .quiz-header {
-        border-bottom: 2px solid #f0f3f7;
-        padding-bottom: 1.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    .quiz-header h2 {
-        color: #0f172a;
-        font-size: 1.8rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    .quiz-progress {
-        background: #f0f3f7;
-        height: 8px;
-        border-radius: 4px;
-        margin-top: 1rem;
-        overflow: hidden;
-    }
-    
-    .quiz-progress-bar {
-        height: 100%;
-        background: linear-gradient(90deg, #0d6efd 0%, #0251d9 100%);
-        border-radius: 4px;
-        transition: width 0.3s ease;
     }
     
     .question-card {
@@ -195,130 +148,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     
-    .options-container {
-        display: grid;
-        gap: 0.8rem;
-        margin-bottom: 1.5rem;
-    }
-    
-    .option-item {
-        display: flex;
-        gap: 1rem;
-        padding: 1rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        background: white;
-    }
-    
-    .option-item:hover {
-        border-color: #0d6efd;
-        background: #f6f8fb;
-        box-shadow: 0 2px 8px rgba(13, 110, 253, 0.1);
-    }
-    
-    .option-label {
-        width: 36px;
-        height: 36px;
-        background: #0d6efd;
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        flex-shrink: 0;
-    }
-    
-    .option-text {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        color: #0f172a;
-        font-weight: 500;
-    }
-    
-    .button-group {
-        display: flex;
-        gap: 1rem;
-        margin-top: 2rem;
-        flex-wrap: wrap;
-    }
-    
-    .btn-primary {
-        background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
-        color: white;
-        border: none;
-        padding: 0.8rem 1.5rem;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 0.95rem;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
-    }
-    
-    .btn-primary:hover {
-        box-shadow: 0 8px 20px rgba(13, 110, 253, 0.4);
-        transform: translateY(-2px);
-    }
-    
-    .btn-secondary {
-        background: #f0f3f7;
-        color: #0f172a;
-        border: 2px solid #e5e7eb;
-        padding: 0.8rem 1.5rem;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 0.95rem;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    
-    .btn-secondary:hover {
-        border-color: #0d6efd;
-        background: #f6f8fb;
-    }
-    
-    .result-container {
-        background: #f0f3f7;
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin-top: 1rem;
-        border-left: 4px solid #0d6efd;
-    }
-    
-    .result-success {
-        background: #ecfdf5;
-        border-left-color: #10b981;
-    }
-    
-    .result-success .result-title {
-        color: #10b981;
-    }
-    
-    .result-error {
-        background: #fef2f2;
-        border-left-color: #ef4444;
-    }
-    
-    .result-error .result-title {
-        color: #ef4444;
-    }
-    
-    .result-title {
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        font-size: 1.1rem;
-    }
-    
-    .result-text {
-        color: #4b5563;
-        font-size: 0.95rem;
-    }
-    
-    /* Auth Styles */
     .login-container {
         display: flex;
         align-items: center;
@@ -348,7 +177,6 @@ st.markdown("""
         text-align: center;
         color: #6b7280;
         margin-bottom: 1.5rem;
-        font-size: 0.95rem;
     }
     
     .form-group {
@@ -360,7 +188,6 @@ st.markdown("""
         color: #0f172a;
         font-weight: 600;
         margin-bottom: 0.5rem;
-        font-size: 0.9rem;
     }
     
     .form-group input {
@@ -368,7 +195,6 @@ st.markdown("""
         padding: 0.8rem;
         border: 2px solid #e5e7eb;
         border-radius: 8px;
-        font-family: 'Inter', 'Segoe UI', sans-serif;
         font-size: 0.95rem;
         transition: border-color 0.3s ease;
     }
@@ -379,77 +205,62 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
     }
     
-    .auth-tabs {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 2rem;
-        border-bottom: 2px solid #e5e7eb;
-    }
-    
-    .auth-tab {
-        padding: 0.8rem 1rem;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        font-weight: 600;
-        color: #6b7280;
-        border-bottom: 3px solid transparent;
-        transition: all 0.3s ease;
-    }
-    
-    .auth-tab.active {
-        color: #0d6efd;
-        border-bottom-color: #0d6efd;
-    }
-    
     @media (max-width: 768px) {
         .header-content {
             flex-direction: column;
             text-align: center;
         }
         
-        .logo-section {
-            justify-content: center;
-            width: 100%;
-        }
-        
         .header-text h1 {
             font-size: 1.5rem;
-        }
-        
-        .quiz-container {
-            padding: 1.5rem;
-        }
-        
-        .button-group {
-            flex-direction: column;
         }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FICHIER POUR STOCKER LES APPRENANTS ---
-USERS_FILE = "utilisateurs_apprenants.json"
+# --- FICHIERS DE DONNÉES ---
+USERS_CSV = "utilisateurs.csv"
+
+def init_users_csv():
+    """Initialiser le fichier CSV des utilisateurs s'il n'existe pas"""
+    if not os.path.exists(USERS_CSV):
+        df = pd.DataFrame(columns=['nom', 'prenom', 'email', 'username', 'password', 'status', 'date_creation'])
+        df.to_csv(USERS_CSV, index=False, encoding='utf-8')
 
 def load_users():
-    """Charger les utilisateurs apprenants"""
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return []
-    return []
+    """Charger les utilisateurs depuis le CSV"""
+    init_users_csv()
+    try:
+        df = pd.read_csv(USERS_CSV, encoding='utf-8')
+        return df.to_dict('records')
+    except:
+        return []
 
-def save_users(users):
-    """Sauvegarder les utilisateurs apprenants"""
-    with open(USERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+def save_user(user_data):
+    """Ajouter un nouvel utilisateur au CSV"""
+    init_users_csv()
+    df = pd.read_csv(USERS_CSV, encoding='utf-8')
+    new_row = pd.DataFrame([user_data])
+    df = pd.concat([df, new_row], ignore_index=True)
+    df.to_csv(USERS_CSV, index=False, encoding='utf-8')
 
 def is_valid_email(email):
     """Valider le format email"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
+
+def load_quiz_data():
+    """Charger les quiz sans cache - mise à jour instantanée"""
+    try:
+        if os.path.exists("data_quizzes.csv"):
+            try:
+                df = pd.read_csv("data_quizzes.csv", encoding="utf-8", sep=";")
+            except:
+                df = pd.read_csv("data_quizzes.csv", encoding="latin1", sep=";")
+            return df if len(df) > 0 else None
+    except:
+        pass
+    return None
 
 # --- INITIALISATION SESSION STATE ---
 if "user_logged_in" not in st.session_state:
@@ -457,19 +268,17 @@ if "user_logged_in" not in st.session_state:
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 if "auth_mode" not in st.session_state:
-    st.session_state.auth_mode = "login"  # login ou signup
+    st.session_state.auth_mode = "login"
 if "current_question" not in st.session_state:
     st.session_state.current_question = 0
 if "responses" not in st.session_state:
     st.session_state.responses = {}
 if "show_results" not in st.session_state:
     st.session_state.show_results = False
-if "df_quiz" not in st.session_state:
-    st.session_state.df_quiz = None
 
 # --- AUTHENTIFICATION ---
 def render_auth():
-    """Afficher les pages de connexion/inscription"""
+    """Afficher la page d'authentification"""
     st.markdown("""
     <div class="login-container">
         <div class="auth-card">
@@ -477,7 +286,7 @@ def render_auth():
             <p>Plateforme d'apprentissage interactive</p>
     """, unsafe_allow_html=True)
     
-    # Tabs pour login/signup
+    # Tabs
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📧 Connexion", use_container_width=True, key="btn_login"):
@@ -496,10 +305,26 @@ def render_auth():
         st.markdown("<h3>Connexion</h3>", unsafe_allow_html=True)
         
         email_login = st.text_input("📧 Email", placeholder="votre-email@example.com", key="email_login")
-        pwd_login = st.text_input("🔑 Mot de passe", type="password", placeholder="Entrez votre mot de passe", key="pwd_login")
+        pwd_login = st.text_input("🔑 Mot de passe", type="password", placeholder="Votre mot de passe", key="pwd_login")
         
         if st.button("Se connecter", use_container_width=True, type="primary"):
-            # Chercher l'utilisateur
+            # Vérifier si c'est un admin
+            try:
+                admins_dict = st.secrets.get("admins", {})
+                if email_login in admins_dict and admins_dict[email_login] == pwd_login:
+                    st.session_state.user_logged_in = True
+                    st.session_state.current_user = {
+                        'nom': 'Admin',
+                        'prenom': 'Campus',
+                        'email': email_login,
+                        'username': 'admin',
+                        'is_admin': True
+                    }
+                    st.rerun()
+            except:
+                pass
+            
+            # Vérifier si c'est un apprenant
             user_found = None
             for user in users:
                 if user['email'] == email_login and user['password'] == pwd_login:
@@ -508,12 +333,12 @@ def render_auth():
             
             if user_found:
                 if user_found.get('status', 'actif') == 'bloqué':
-                    st.error("❌ Votre compte a été bloqué par un administrateur")
+                    st.error("❌ Votre compte a été bloqué")
                 else:
                     st.session_state.user_logged_in = True
                     st.session_state.current_user = user_found
                     st.rerun()
-            else:
+            elif not user_found:
                 st.error("❌ Email ou mot de passe incorrect")
     
     else:  # signup
@@ -522,9 +347,9 @@ def render_auth():
         nom = st.text_input("👤 Nom", placeholder="Votre nom", key="signup_nom")
         prenom = st.text_input("👤 Prénom", placeholder="Votre prénom", key="signup_prenom")
         email = st.text_input("📧 Email", placeholder="votre-email@example.com", key="signup_email")
-        username = st.text_input("👤 Username", placeholder="Nom d'utilisateur (pour la connexion)", key="signup_username")
+        username = st.text_input("👤 Username", placeholder="Nom d'utilisateur", key="signup_username")
         password = st.text_input("🔑 Mot de passe", type="password", placeholder="Minimum 6 caractères", key="signup_password")
-        password_confirm = st.text_input("🔑 Confirmer le mot de passe", type="password", placeholder="Répétez votre mot de passe", key="signup_password_confirm")
+        password_confirm = st.text_input("🔑 Confirmer", type="password", placeholder="Répétez votre mot de passe", key="signup_password_confirm")
         
         if st.button("S'inscrire", use_container_width=True, type="primary"):
             # Validations
@@ -533,15 +358,15 @@ def render_auth():
             elif not is_valid_email(email):
                 st.error("❌ Email invalide")
             elif len(password) < 6:
-                st.error("❌ Le mot de passe doit faire minimum 6 caractères")
+                st.error("❌ Minimum 6 caractères")
             elif password != password_confirm:
                 st.error("❌ Les mots de passe ne correspondent pas")
             elif any(u['email'] == email for u in users):
-                st.error("❌ Cet email est déjà utilisé")
+                st.error("❌ Email déjà utilisé")
             elif any(u['username'] == username for u in users):
-                st.error("❌ Ce username est déjà pris")
+                st.error("❌ Username déjà pris")
             else:
-                # Créer le nouvel utilisateur
+                # Créer l'utilisateur
                 new_user = {
                     'nom': nom,
                     'prenom': prenom,
@@ -551,8 +376,7 @@ def render_auth():
                     'status': 'actif',
                     'date_creation': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
-                users.append(new_user)
-                save_users(users)
+                save_user(new_user)
                 
                 st.session_state.user_logged_in = True
                 st.session_state.current_user = new_user
@@ -561,26 +385,12 @@ def render_auth():
     
     st.markdown("</div></div>", unsafe_allow_html=True)
 
-# --- CHARGE LES QUIZ ---
-@st.cache_data
-def load_quiz_data():
-    try:
-        if os.path.exists("data_quizzes.csv"):
-            try:
-                df = pd.read_csv("data_quizzes.csv", encoding="utf-8", sep=";")
-            except:
-                df = pd.read_csv("data_quizzes.csv", encoding="latin1", sep=";")
-            return df
-    except:
-        return None
-    return None
-
-# --- VÉRIFIER AUTHENTIFICATION ---
+# --- UTILISATEUR CONNECTÉ ---
 if not st.session_state.user_logged_in:
     render_auth()
 else:
-    # --- UTILISATEUR CONNECTÉ ---
     user = st.session_state.current_user
+    is_admin = user.get('is_admin', False)
     
     # Header
     st.markdown(f"""
@@ -598,7 +408,7 @@ else:
             <div class="user-info">
                 <p><strong>👤 {user.get('nom', '')} {user.get('prenom', '')}</strong></p>
                 <p><strong>📧</strong> {user.get('email', '')}</p>
-                <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.85rem;">Bonne chance ! 💪</p>
+                <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.85rem;">{"🔐 Administrateur" if is_admin else "Apprenant"} 💪</p>
             </div>
         </div>
     </div>
@@ -606,6 +416,7 @@ else:
     
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     
+    # Charger les quiz à chaque fois (pas de cache)
     df_quiz = load_quiz_data()
     
     if df_quiz is None or len(df_quiz) == 0:
@@ -613,11 +424,11 @@ else:
         <div class="quiz-container" style="text-align: center; padding: 3rem 1rem;">
             <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
             <h2 style="color: #0f172a; margin: 0.5rem 0;">Les quiz arrivent bientôt !</h2>
-            <p style="color: #6b7280; margin: 0;">L'équipe pédagogique prépare du contenu intéressant pour vous.</p>
+            <p style="color: #6b7280; margin: 0;">L'équipe pédagogique prépare du contenu intéressant.</p>
         </div>
         """, unsafe_allow_html=True)
     else:
-        # Statistiques
+        # Stats
         col1, col2, col3 = st.columns(3)
         with col1:
             completed = len([v for v in st.session_state.responses.values() if v])
@@ -636,14 +447,13 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with col3:
-            if len(df_quiz) > 0:
-                progress = (completed / len(df_quiz)) * 100
-                st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-number">{progress:.0f}%</div>
-                    <div class="stat-label">Progression</div>
-                </div>
-                """, unsafe_allow_html=True)
+            progress = (completed / len(df_quiz)) * 100 if len(df_quiz) > 0 else 0
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-number">{progress:.0f}%</div>
+                <div class="stat-label">Progression</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         st.markdown("---")
         
@@ -651,10 +461,10 @@ else:
         if not st.session_state.show_results:
             st.markdown("""
             <div class="quiz-container">
-                <div class="quiz-header">
-                    <h2>🎯 Entraînement Interactif</h2>
-                    <div class="quiz-progress">
-                        <div class="quiz-progress-bar" style="width: """ + 
+                <div style="border-bottom: 2px solid #f0f3f7; padding-bottom: 1.5rem; margin-bottom: 2rem;">
+                    <h2 style="color: #0f172a; font-size: 1.8rem; margin-bottom: 0.5rem;">🎯 Entraînement Interactif</h2>
+                    <div style="background: #f0f3f7; height: 8px; border-radius: 4px; margin-top: 1rem; overflow: hidden;">
+                        <div style="height: 100%; background: linear-gradient(90deg, #0d6efd 0%, #0251d9 100%); width: """ + 
                         str((st.session_state.current_question / len(df_quiz)) * 100) + 
                         """%"></div>
                     </div>
@@ -662,7 +472,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
             
-            # Question actuelle
+            # Question
             row = df_quiz.iloc[st.session_state.current_question]
             
             st.markdown(f"""
@@ -672,17 +482,13 @@ else:
             </div>
             """, unsafe_allow_html=True)
             
-            # Options
             options = [row['a'], row['b'], row['c'], row['d']]
-            
-            st.markdown('<div class="options-container">', unsafe_allow_html=True)
             selected_option = st.radio(
                 "Choisir votre réponse :",
                 options,
                 key=f"q_{st.session_state.current_question}",
                 label_visibility="collapsed"
             )
-            st.markdown('</div>', unsafe_allow_html=True)
             
             # Boutons
             col1, col2, col3 = st.columns(3)
@@ -698,20 +504,20 @@ else:
                     st.session_state.responses[st.session_state.current_question] = selected_option
                     
                     if selected_option == row['reponse']:
-                        st.success(f"🎯 Bravo {user.get('prenom')} ! C'est correct !")
+                        st.success(f"🎯 Bravo {user.get('prenom')} ! Correct !")
                         st.balloons()
                     else:
-                        st.error(f"❌ La réponse correcte est : **{row['reponse']}**")
-                        st.info(f"💡 **Explication** : {row['explication']}")
+                        st.error(f"❌ Bonne réponse : **{row['reponse']}**")
+                        st.info(f"💡 {row['explication']}")
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
                     if st.session_state.current_question < len(df_quiz) - 1:
-                        if st.button("Continuer →", use_container_width=True):
+                        if st.button("Continuer →"):
                             st.session_state.current_question += 1
                             st.rerun()
                     else:
-                        if st.button("Voir les résultats finaux 🏆", use_container_width=True):
+                        if st.button("Voir résultats 🏆"):
                             st.session_state.show_results = True
                             st.rerun()
             
@@ -724,19 +530,6 @@ else:
         
         else:
             # RÉSULTATS
-            st.markdown("""
-            <div class="quiz-container">
-                <div style="text-align: center; padding: 2rem;">
-                    <div style="font-size: 3.5rem; margin-bottom: 1rem;">🏆</div>
-                    <h2 style="color: #0f172a; margin: 0;">Bravo, vous avez terminé !</h2>
-                    <p style="color: #6b7280; margin-top: 0.5rem;">Voici votre analyse complète</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Calcul scores
             correct_answers = 0
             for i, row in df_quiz.iterrows():
                 if i in st.session_state.responses and st.session_state.responses[i] == row['reponse']:
@@ -744,7 +537,16 @@ else:
             
             score_percentage = (correct_answers / len(df_quiz)) * 100
             
-            # Affichage scores
+            st.markdown("""
+            <div class="quiz-container" style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3.5rem; margin-bottom: 1rem;">🏆</div>
+                <h2 style="color: #0f172a;">Bravo, vous avez terminé !</h2>
+                <p style="color: #6b7280; margin-top: 0.5rem;">Voici votre analyse complète</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Bonnes réponses", f"{correct_answers}/{len(df_quiz)}")
@@ -758,11 +560,9 @@ else:
                 else:
                     st.metric("Note", "💪 À améliorer")
             with col4:
-                st.metric("Catégorie", "Générale")
+                st.metric("Statut", "✅ Complété")
             
             st.markdown("---")
-            
-            # Détails
             st.markdown("### 📋 Détail des réponses")
             
             details_data = []
@@ -770,7 +570,7 @@ else:
                 user_answer = st.session_state.responses.get(i, "Non répondu")
                 is_correct = user_answer == row['reponse']
                 details_data.append({
-                    "Question": row['question'][:50] + "...",
+                    "Question": row['question'][:40] + "...",
                     "Votre réponse": user_answer,
                     "Correcte": "✅" if is_correct else "❌",
                     "Bonne réponse": row['reponse'],
@@ -781,7 +581,6 @@ else:
             
             st.markdown("---")
             
-            # Boutons finaux
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("🔄 Recommencer", use_container_width=True):
@@ -791,14 +590,14 @@ else:
                     st.rerun()
             
             with col2:
-                if st.button("📥 Télécharger résultat", use_container_width=True):
-                    csv = details_df.to_csv(index=False)
-                    st.download_button(
-                        label="💾 Télécharger CSV",
-                        data=csv,
-                        file_name=f"resultats_quiz_{user.get('nom', '')}.csv",
-                        mime="text/csv"
-                    )
+                csv = details_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Télécharger résultat",
+                    data=csv,
+                    file_name=f"resultats_{user.get('nom', '')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
             
             with col3:
                 if st.button("🚪 Déconnexion", use_container_width=True):
@@ -810,10 +609,8 @@ else:
                     st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Footer
     st.markdown("""
     <div style="text-align: center; color: #6b7280; font-size: 0.85rem; margin-top: 3rem; padding: 2rem; border-top: 1px solid #e5e7eb;">
-        <p>© 2024 Campus Réussite — Plateforme d'apprentissage | Version 2.1</p>
+        <p>© 2024 Campus Réussite — Version 2.2</p>
     </div>
     """, unsafe_allow_html=True)
