@@ -3,14 +3,12 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# Configuration de la page
 st.set_page_config(
     page_title="Campus Réussite - Admin",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS
 st.markdown("""
 <style>
     * {
@@ -21,7 +19,7 @@ st.markdown("""
     
     body {
         font-family: 'Inter', 'Segoe UI', sans-serif;
-        background: linear-gradient(135deg, #f6f8fb 0%, #eef2f7 100%);
+        background: linear-gradient(135deg, #f0f4ff 0%, #f8faff 100%);
     }
     
     .admin-header {
@@ -32,34 +30,13 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
     }
     
-    .header-flex {
-        max-width: 1200px;
-        margin: 0 auto;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 2rem;
-    }
-    
-    .header-flex h1 {
+    .admin-header h1 {
         font-size: 2rem;
-        font-weight: 700;
         margin-bottom: 0.3rem;
     }
     
-    .admin-badge {
-        background: rgba(34, 197, 94, 0.2);
-        border: 1px solid rgba(34, 197, 94, 0.5);
-        color: #22c55e;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    
     .main-content {
-        max-width: 1200px;
+        max-width: 1300px;
         margin: 0 auto;
         padding: 0 1rem 2rem 1rem;
     }
@@ -102,9 +79,27 @@ st.markdown("""
         text-transform: uppercase;
     }
     
-    .stat-card.warning { border-left-color: #f59e0b; }
-    .stat-card.success { border-left-color: #10b981; }
-    .stat-card.danger { border-left-color: #ef4444; }
+    .form-group {
+        margin-bottom: 1rem;
+    }
+    
+    .form-group label {
+        display: block;
+        color: #1e293b;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        width: 100%;
+        padding: 0.8rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-family: 'Inter', 'Segoe UI', sans-serif;
+        font-size: 0.95rem;
+    }
     
     .login-container {
         display: flex;
@@ -123,133 +118,134 @@ st.markdown("""
         max-width: 400px;
         width: 100%;
     }
-    
-    .login-card h2 {
-        text-align: center;
-        color: #1e293b;
-        margin-bottom: 0.5rem;
-        font-size: 1.8rem;
-        border: none;
-    }
-    
-    .login-card p {
-        text-align: center;
-        color: #64748b;
-        margin-bottom: 1.5rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FICHIER APPRENANTS CSV ---
+# --- FICHIERS ---
 USERS_CSV = "utilisateurs.csv"
+QUIZ_CSV = "data_quizzes.csv"
+FEEDBACK_CSV = "feedback.csv"
 
-def load_users_from_csv():
-    """Charger les apprenants depuis le CSV"""
-    if os.path.exists(USERS_CSV):
-        try:
-            df = pd.read_csv(USERS_CSV, encoding='utf-8')
-            return df.to_dict('records')
-        except:
-            return []
-    return []
+def init_files():
+    """Initialiser les fichiers"""
+    for csv_file in [USERS_CSV, QUIZ_CSV, FEEDBACK_CSV]:
+        if csv_file == QUIZ_CSV and not os.path.exists(csv_file):
+            df = pd.DataFrame(columns=['question', 'a', 'b', 'c', 'd', 'reponses_correctes', 'explication', 'categorie'])
+            df.to_csv(csv_file, index=False, sep=";", encoding='utf-8')
+        elif csv_file == USERS_CSV and not os.path.exists(csv_file):
+            df = pd.DataFrame(columns=['nom', 'prenom', 'email', 'username', 'password', 'status', 'date_creation'])
+            df.to_csv(csv_file, index=False, encoding='utf-8')
+        elif csv_file == FEEDBACK_CSV and not os.path.exists(csv_file):
+            df = pd.DataFrame(columns=['email', 'titre', 'message', 'type', 'date'])
+            df.to_csv(csv_file, index=False, encoding='utf-8')
 
-# --- AUTHENTIFICATION ADMIN ---
-def check_admin_password():
-    """Vérifier les identifiants admin depuis st.secrets"""
+def load_quiz():
+    """Charger les quiz"""
+    init_files()
+    try:
+        df = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
+        return df if len(df) > 0 else None
+    except:
+        return None
+
+def load_users():
+    """Charger les apprenants"""
+    init_files()
+    try:
+        df = pd.read_csv(USERS_CSV, encoding='utf-8')
+        return df.to_dict('records') if len(df) > 0 else []
+    except:
+        return []
+
+def add_quiz(question, a, b, c, d, correct, explication, categorie):
+    """Ajouter un quiz"""
+    init_files()
+    df = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
+    new_row = pd.DataFrame([{
+        'question': question,
+        'a': a,
+        'b': b,
+        'c': c,
+        'd': d,
+        'reponses_correctes': correct,
+        'explication': explication,
+        'categorie': categorie
+    }])
+    df = pd.concat([df, new_row], ignore_index=True)
+    df.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
+
+def load_feedback():
+    """Charger les feedbacks"""
+    init_files()
+    try:
+        df = pd.read_csv(FEEDBACK_CSV, encoding='utf-8')
+        return df if len(df) > 0 else None
+    except:
+        return None
+
+# --- AUTHENTIFICATION ---
+def check_auth():
+    """Vérifier authentification"""
     if "admin_authenticated" not in st.session_state:
         st.session_state.admin_authenticated = False
     
     if not st.session_state.admin_authenticated:
-        st.markdown("""
-        <div class="login-container">
-            <div class="login-card">
-                <h2>🔐 Administration</h2>
-                <p>Campus Réussite — Accès Administrateur</p>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            email_input = st.text_input("📧 Email", placeholder="votre-email@example.com", key="admin_email_input")
-        with col2:
-            pwd_input = st.text_input("🔑 Mot de passe", type="password", placeholder="Votre mot de passe", key="admin_pwd_input")
+        st.markdown("<h2 style='text-align: center;'>🔐 Administration</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #6b7280;'>Campus Réussite</p>", unsafe_allow_html=True)
+        
+        email = st.text_input("Email")
+        pwd = st.text_input("Mot de passe", type="password")
         
         if st.button("Se connecter", use_container_width=True, type="primary"):
             try:
-                admins_dict = st.secrets.get("admins", {})
-                
-                if email_input in admins_dict:
-                    if admins_dict[email_input] == pwd_input:
-                        st.session_state.admin_authenticated = True
-                        st.session_state.authenticated_admin_email = email_input
-                        st.rerun()
-                    else:
-                        st.error("❌ Mot de passe incorrect")
+                admins = st.secrets.get("admins", {})
+                if email in admins and admins[email] == pwd:
+                    st.session_state.admin_authenticated = True
+                    st.session_state.admin_email = email
+                    st.rerun()
                 else:
-                    st.error("❌ Email non trouvé")
-            except Exception as e:
-                st.error("⚠️ Erreur : Vérifiez que secrets.toml est configuré")
+                    st.error("❌ Identifiants incorrects")
+            except:
+                st.error("❌ Erreur")
         
-        st.markdown("</div></div>", unsafe_allow_html=True)
+        st.markdown('</div></div>', unsafe_allow_html=True)
         return False
-    
     return True
 
-# --- VÉRIFICATION AUTH ---
-if not check_admin_password():
+if not check_auth():
     st.stop()
 
 # --- HEADER ---
 st.markdown(f"""
 <div class="admin-header">
-    <div class="header-flex">
-        <div>
-            <h1>🎓 Campus Réussite</h1>
-            <p>Tableau de bord administrateur</p>
-        </div>
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <div class="admin-badge">👤 {st.session_state.authenticated_admin_email}</div>
-            <div style="text-align: right; font-size: 0.9rem;">
-                <div style="color: white; font-weight: 600;">Administrateur</div>
-                <div style="opacity: 0.9; font-size: 0.85rem;">Interface de gestion</div>
-            </div>
-        </div>
-    </div>
+    <h1>🎓 Campus Réussite - Admin</h1>
+    <p>Tableau de bord administrateur</p>
+    <div style="margin-top: 1rem; opacity: 0.9;">👤 {st.session_state.admin_email}</div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
 # --- NAVIGATION ---
-menu = st.tabs(["📊 Tableau de Bord", "👥 Utilisateurs", "📤 Importer Quiz", "⚙️ Paramètres"])
+menu = st.tabs(["📊 Dashboard", "🎯 Gestion Quiz", "👥 Apprenants", "💬 Feedback", "⚙️ Paramètres"])
 
 # --- TAB 1: DASHBOARD ---
 with menu[0]:
-    @st.cache_data(ttl=5)  # Cache 5 secondes pour synchro plus rapide
-    def load_quiz_data():
-        try:
-            if os.path.exists("data_quizzes.csv"):
-                try:
-                    df = pd.read_csv("data_quizzes.csv", encoding="utf-8", sep=";")
-                except:
-                    df = pd.read_csv("data_quizzes.csv", encoding="latin1", sep=";")
-                return df
-        except:
-            return None
-        return None
+    init_files()
+    df_quiz = load_quiz()
+    users = load_users()
     
-    df_quiz = load_quiz_data()
-    users_data = load_users_from_csv()
-    
-    st.markdown("""
-    <h2 style="color: #1e293b; margin-bottom: 1rem; font-size: 1.5rem;">📈 Statistiques Globales</h2>
-    """, unsafe_allow_html=True)
+    st.markdown("## 📈 Statistiques")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown(f"""
         <div class="stat-card">
-            <div class="stat-number">{len(users_data) if users_data else 0}</div>
+            <div class="stat-number">{len(users)}</div>
             <div class="stat-label">Apprenants</div>
         </div>
         """, unsafe_allow_html=True)
@@ -257,238 +253,231 @@ with menu[0]:
     with col2:
         quiz_count = len(df_quiz) if df_quiz is not None else 0
         st.markdown(f"""
-        <div class="stat-card warning">
+        <div class="stat-card">
             <div class="stat-number">{quiz_count}</div>
             <div class="stat-label">Questions</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
-        categories = len(df_quiz['categorie'].unique()) if df_quiz is not None and 'categorie' in df_quiz.columns else 0
+        cats = len(df_quiz['categorie'].unique()) if df_quiz is not None else 0
         st.markdown(f"""
-        <div class="stat-card success">
-            <div class="stat-number">{categories}</div>
+        <div class="stat-card">
+            <div class="stat-number">{cats}</div>
             <div class="stat-label">Catégories</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col4:
         st.markdown(f"""
-        <div class="stat-card danger">
+        <div class="stat-card">
             <div class="stat-number">✅</div>
-            <div class="stat-label">En Ligne</div>
+            <div class="stat-label">Actif</div>
         </div>
         """, unsafe_allow_html=True)
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
     
-    # Quiz
     st.markdown("""
     <div class="card">
         <h2>📋 Détail des Questions</h2>
     """, unsafe_allow_html=True)
     
     if df_quiz is not None and len(df_quiz) > 0:
-        display_df = df_quiz[['question', 'reponse', 'explication', 'categorie']].copy()
-        display_df.columns = ['Question', 'Réponse', 'Explication', 'Catégorie']
+        display_df = df_quiz[['question', 'reponses_correctes', 'explication', 'categorie']].copy()
+        display_df.columns = ['Question', 'Réponses Correctes', 'Explication', 'Catégorie']
         st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
     else:
-        st.info("📋 Aucun quiz. Importer un fichier CSV.")
+        st.info("Aucun quiz")
     
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    if df_quiz is not None and len(df_quiz) > 0:
-        csv = df_quiz.to_csv(index=False, sep=";")
-        st.download_button(
-            label="📥 Télécharger questions (CSV)",
-            data=csv,
-            file_name=f"quiz_export_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# --- TAB 2: UTILISATEURS ---
+# --- TAB 2: GESTION QUIZ ---
 with menu[1]:
-    users_data = load_users_from_csv()
+    st.markdown("## 🎯 Gestion des Quiz")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("<h2 style='color: #1e293b;'>👥 Gestion des Apprenants</h2>", unsafe_allow_html=True)
-    with col2:
-        if st.button("🔄 Rafraîchir", use_container_width=True):
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Stats
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="stat-card">
-            <div class="stat-number">{len(users_data)}</div>
-            <div class="stat-label">Total Inscrits</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        active_users = len([u for u in users_data if u.get('status', 'actif') == 'actif'])
-        st.markdown(f"""
-        <div class="stat-card success">
-            <div class="stat-number">{active_users}</div>
-            <div class="stat-label">Actifs</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        blocked_users = len([u for u in users_data if u.get('status', 'actif') == 'bloqué'])
-        st.markdown(f"""
-        <div class="stat-card danger">
-            <div class="stat-number">{blocked_users}</div>
-            <div class="stat-label">Bloqués</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("<h3>📊 Liste des Apprenants</h3>", unsafe_allow_html=True)
-    
-    if users_data:
-        # Tableau
-        display_users = []
-        for idx, user in enumerate(users_data):
-            display_users.append({
-                "ID": idx + 1,
-                "Nom": user.get('nom', ''),
-                "Prénom": user.get('prenom', ''),
-                "Email": user.get('email', ''),
-                "Username": user.get('username', ''),
-                "Status": user.get('status', 'actif'),
-                "Date": user.get('date_creation', '')
-            })
-        
-        df_display = pd.DataFrame(display_users)
-        st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
-        
-        # Actions
-        st.markdown("---")
-        st.markdown("<h3>⚙️ Gestion</h3>", unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            user_names = [f"{u.get('nom', '')} {u.get('prenom', '')}" for u in users_data]
-            user_to_block = st.selectbox("Bloquer/Débloquer :", user_names, key="block_select")
-            if st.button("🚫 Appliquer", use_container_width=True):
-                df = pd.read_csv(USERS_CSV, encoding='utf-8')
-                for idx, user in enumerate(df.itertuples()):
-                    if f"{user.nom} {user.prenom}" == user_to_block:
-                        current_status = df.at[idx, 'status']
-                        df.at[idx, 'status'] = 'actif' if current_status == 'bloqué' else 'bloqué'
-                        break
-                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
-                st.success("✅ Statut mis à jour")
-                st.rerun()
-        
-        with col2:
-            user_to_delete = st.selectbox("Supprimer :", user_names, key="delete_select")
-            if st.button("🗑️ Supprimer", use_container_width=True):
-                df = pd.read_csv(USERS_CSV, encoding='utf-8')
-                df = df[~((df['nom'] + ' ' + df['prenom']) == user_to_delete)]
-                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
-                st.success("✅ Apprenant supprimé")
-                st.rerun()
-        
-        with col3:
-            if st.button("📥 Exporter (CSV)", use_container_width=True):
-                csv_data = df_display.to_csv(index=False)
-                st.download_button(
-                    label="Télécharger",
-                    data=csv_data,
-                    file_name=f"apprenants_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-    else:
-        st.info("📭 Aucun apprenant inscrit")
-
-# --- TAB 3: IMPORTER QUIZ ---
-with menu[2]:
-    st.markdown("<h2 style='color: #1e293b;'>📤 Importer des Quiz</h2>", unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div style="background: #f0f3f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #0d6efd;">
-        <strong>📝 Format :</strong><br>
-        Colonnes : question, a, b, c, d, reponse, explication, categorie<br>
-        Séparateur : <code>;</code>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    uploaded_file = st.file_uploader("Choisir un fichier CSV", type=["csv"], key="quiz_uploader")
-    
-    if uploaded_file is not None:
-        try:
-            df_new = pd.read_csv(uploaded_file, sep=";", encoding="utf-8")
-            
-            st.success("✅ Fichier chargé !")
-            st.markdown("### Aperçu")
-            st.dataframe(df_new, use_container_width=True, height=300)
-            
-            st.markdown("### Statistiques")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Questions", len(df_new))
-            with col2:
-                st.metric("Colonnes", len(df_new.columns))
-            with col3:
-                st.metric("Valides", "✅")
-            
-            st.markdown("---")
-            
-            if st.button("🚀 Publier sur la plateforme", use_container_width=True, type="primary"):
-                try:
-                    df_new.to_csv("data_quizzes.csv", index=False, sep=";", encoding="utf-8")
-                    # Nettoyer le cache
-                    st.cache_data.clear()
-                    st.success("✅ Quiz publiés !")
-                    st.info("💡 Les quiz apparaissent immédiatement pour les apprenants")
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
-        
-        except Exception as e:
-            st.error(f"❌ Erreur lecture : {e}")
-
-# --- TAB 4: PARAMÈTRES ---
-with menu[3]:
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("<h3>🔐 Sécurité</h3>", unsafe_allow_html=True)
-        st.info("✅ Authentification via st.secrets")
+        st.markdown("### ➕ Créer un Quiz Manuellement")
+        
+        with st.form("new_quiz_form"):
+            question = st.text_input("Question")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                opt_a = st.text_input("Option A")
+                opt_c = st.text_input("Option C")
+            with col_b:
+                opt_b = st.text_input("Option B")
+                opt_d = st.text_input("Option D")
+            
+            st.markdown("**Sélectionner les bonnes réponses (peut en avoir plusieurs) :**")
+            col_cb1, col_cb2 = st.columns(2)
+            with col_cb1:
+                cb_a = st.checkbox("A")
+                cb_c = st.checkbox("C")
+            with col_cb2:
+                cb_b = st.checkbox("B")
+                cb_d = st.checkbox("D")
+            
+            correct_answers = []
+            if cb_a: correct_answers.append("A")
+            if cb_b: correct_answers.append("B")
+            if cb_c: correct_answers.append("C")
+            if cb_d: correct_answers.append("D")
+            
+            explication = st.text_area("Explication")
+            categorie = st.text_input("Catégorie")
+            
+            if st.form_submit_button("➕ Ajouter", use_container_width=True):
+                if all([question, opt_a, opt_b, opt_c, opt_d, explication, categorie, correct_answers]):
+                    correct_str = ", ".join(correct_answers)
+                    add_quiz(question, opt_a, opt_b, opt_c, opt_d, correct_str, explication, categorie)
+                    st.success("✅ Quiz ajouté !")
+                else:
+                    st.error("❌ Remplissez tous les champs")
+    
+    with col2:
+        st.markdown("### 📤 Importer des Quiz (CSV)")
+        
+        uploaded = st.file_uploader("Choisir un CSV", type=["csv"], key="quiz_upload")
+        
+        if uploaded:
+            try:
+                df = pd.read_csv(uploaded, sep=";", encoding='utf-8')
+                
+                st.success("✅ Fichier chargé")
+                st.dataframe(df, use_container_width=True, height=300)
+                
+                if st.button("🚀 Importer", use_container_width=True):
+                    existing = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
+                    merged = pd.concat([existing, df], ignore_index=True)
+                    merged.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
+                    st.success("✅ Quiz importés !")
+            except Exception as e:
+                st.error(f"❌ Erreur : {e}")
+
+# --- TAB 3: APPRENANTS ---
+with menu[2]:
+    st.markdown("## 👥 Gestion des Apprenants")
+    
+    users = load_users()
+    
+    if not users:
+        st.info("Aucun apprenant")
+    else:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total", len(users))
+        with col2:
+            active = len([u for u in users if u.get('status') == 'actif'])
+            st.metric("Actifs", active)
+        with col3:
+            blocked = len([u for u in users if u.get('status') == 'bloqué'])
+            st.metric("Bloqués", blocked)
+        
+        st.markdown("---")
+        st.markdown("### 📊 Liste")
+        
+        df_users = pd.DataFrame([{
+            'Nom': u.get('nom'),
+            'Prénom': u.get('prenom'),
+            'Email': u.get('email'),
+            'Status': u.get('status'),
+            'Date': u.get('date_creation')
+        } for u in users])
+        
+        st.dataframe(df_users, use_container_width=True, height=400)
+        
+        st.markdown("---")
+        st.markdown("### ⚙️ Actions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            user_names = [f"{u['nom']} {u['prenom']}" for u in users]
+            to_block = st.selectbox("Bloquer/Débloquer", user_names)
+            
+            if st.button("🚫 Appliquer"):
+                df = pd.read_csv(USERS_CSV, encoding='utf-8')
+                for idx, row in df.iterrows():
+                    if f"{row['nom']} {row['prenom']}" == to_block:
+                        df.at[idx, 'status'] = 'actif' if row['status'] == 'bloqué' else 'bloqué'
+                        break
+                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
+                st.success("✅ Statut changé")
+                st.rerun()
+        
+        with col2:
+            to_delete = st.selectbox("Supprimer", user_names, key="del")
+            
+            if st.button("🗑️ Supprimer"):
+                df = pd.read_csv(USERS_CSV, encoding='utf-8')
+                df = df[~((df['nom'] + ' ' + df['prenom']) == to_delete)]
+                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
+                st.success("✅ Supprimé")
+                st.rerun()
+        
+        st.markdown("---")
+        
+        csv_data = df_users.to_csv(index=False)
+        st.download_button(
+            "📥 Exporter (CSV)",
+            csv_data,
+            f"apprenants_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv",
+            use_container_width=True
+        )
+
+# --- TAB 4: FEEDBACK ---
+with menu[3]:
+    st.markdown("## 💬 Feedback des Apprenants")
+    
+    df_feedback = load_feedback()
+    
+    if df_feedback is None or len(df_feedback) == 0:
+        st.info("Aucun feedback")
+    else:
+        for idx, row in df_feedback.iterrows():
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**{row['titre']}**")
+                    st.markdown(f"De : {row['email']}")
+                    st.markdown(f"Message : {row['message']}")
+                with col2:
+                    st.markdown(f"**{row['type']}**")
+                    st.markdown(f"__{row['date']}__")
+
+# --- TAB 5: PARAMÈTRES ---
+with menu[4]:
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔐 Sécurité")
+        st.info("✅ Auth via secrets.toml")
         
         if st.button("🚪 Déconnexion", use_container_width=True):
             st.session_state.admin_authenticated = False
             st.rerun()
     
     with col2:
-        st.markdown("<h3>📊 Données</h3>", unsafe_allow_html=True)
-        st.info("📂 CSV + Secrets")
-    
-    st.markdown("---")
-    st.markdown("""
-    <div style="margin-top: 2rem; padding: 1.5rem; background: #f8fafc; border-radius: 8px; border-left: 4px solid #0d6efd;">
-        <h4>ℹ️ À propos</h4>
-        <p style="color: #64748b;">
-            <strong>Campus Réussite</strong>Construite pour aider<br>
-            Plateforme d'apprentissage interactive<br>
-            © 2026 — Tous droits réservés
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+        st.markdown("### 📊 Données")
+        
+        if st.button("💾 Exporter Tout", use_container_width=True):
+            df_users = pd.read_csv(USERS_CSV, encoding='utf-8')
+            csv = df_users.to_csv(index=False)
+            st.download_button(
+                "Users CSV",
+                csv,
+                f"users_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv"
+            )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Footer
 st.markdown("""
 <div style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 3rem; padding: 2rem; border-top: 1px solid #e2e8f0;">
-    <p>Campus Réussite — Dashboard Admin ® Fabrice</p>
+    <p>Campus Réussite Admin v3.0</p>
 </div>
 """, unsafe_allow_html=True)
