@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
+from datetime import datetime
 from pathlib import Path
 
 # Configuration de la page
@@ -32,18 +34,6 @@ st.markdown("""
         border-radius: 0;
         margin-bottom: 2rem;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-        animation: slideDown 0.6s ease-out;
-    }
-    
-    @keyframes slideDown {
-        from {
-            transform: translateY(-30px);
-            opacity: 0;
-        }
-        to {
-            transform: translateY(0);
-            opacity: 1;
-        }
     }
     
     .header-flex {
@@ -77,14 +67,12 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* Main content */
     .main-content {
         max-width: 1200px;
         margin: 0 auto;
         padding: 0 1rem 2rem 1rem;
     }
     
-    /* Card styles */
     .card {
         background: white;
         padding: 1.5rem;
@@ -106,14 +94,6 @@ st.markdown("""
         padding-bottom: 0.8rem;
     }
     
-    .card h3 {
-        color: #1e293b;
-        font-size: 1.2rem;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    
-    /* Stats Grid */
     .stats-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -155,137 +135,6 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
     
-    /* Buttons */
-    .btn {
-        padding: 0.7rem 1.2rem;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 0.9rem;
-    }
-    
-    .btn-primary {
-        background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
-        color: white;
-        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
-    }
-    
-    .btn-primary:hover {
-        box-shadow: 0 8px 20px rgba(13, 110, 253, 0.4);
-        transform: translateY(-2px);
-    }
-    
-    .btn-secondary {
-        background: #f0f3f7;
-        color: #1e293b;
-        border: 2px solid #e2e8f0;
-    }
-    
-    .btn-secondary:hover {
-        border-color: #0d6efd;
-        background: #f6f8fb;
-    }
-    
-    .btn-danger {
-        background: #ef4444;
-        color: white;
-    }
-    
-    .btn-danger:hover {
-        background: #dc2626;
-    }
-    
-    .btn-success {
-        background: #10b981;
-        color: white;
-    }
-    
-    .btn-success:hover {
-        background: #059669;
-    }
-    
-    /* Form styles */
-    .form-group {
-        margin-bottom: 1.2rem;
-    }
-    
-    .form-group label {
-        display: block;
-        color: #1e293b;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        font-size: 0.95rem;
-    }
-    
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-        width: 100%;
-        padding: 0.8rem;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        font-family: 'Inter', 'Segoe UI', sans-serif;
-        font-size: 0.95rem;
-        transition: border-color 0.3s ease;
-    }
-    
-    .form-group input:focus,
-    .form-group textarea:focus,
-    .form-group select:focus {
-        outline: none;
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
-    }
-    
-    .form-group textarea {
-        min-height: 100px;
-        resize: vertical;
-    }
-    
-    /* Table styles */
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1rem;
-    }
-    
-    .data-table th {
-        background: #f8fafc;
-        color: #1e293b;
-        padding: 1rem;
-        text-align: left;
-        font-weight: 700;
-        border-bottom: 2px solid #e2e8f0;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    .data-table td {
-        padding: 0.8rem 1rem;
-        border-bottom: 1px solid #f0f3f7;
-        color: #475569;
-    }
-    
-    .data-table tr:hover {
-        background: #f8fafc;
-    }
-    
-    /* Action buttons in table */
-    .action-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-    
-    .action-buttons .btn {
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
-    }
-    
-    /* Login screen */
     .login-container {
         display: flex;
         align-items: center;
@@ -309,6 +158,7 @@ st.markdown("""
         color: #1e293b;
         margin-bottom: 0.5rem;
         font-size: 1.8rem;
+        border: none;
     }
     
     .login-card p {
@@ -317,51 +167,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     
-    /* Tabs */
-    .tab-container {
-        margin-top: 1.5rem;
-    }
-    
-    .tab-buttons {
-        display: flex;
-        gap: 0.5rem;
-        border-bottom: 2px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-    }
-    
-    .tab-btn {
-        padding: 0.8rem 1.2rem;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        color: #64748b;
-        font-weight: 600;
-        border-bottom: 3px solid transparent;
-        transition: all 0.3s ease;
-    }
-    
-    .tab-btn.active {
-        color: #0d6efd;
-        border-bottom-color: #0d6efd;
-    }
-    
-    .tab-btn:hover {
-        color: #1e293b;
-    }
-    
-    /* Empty states */
-    .empty-state {
-        text-align: center;
-        padding: 2rem;
-        color: #64748b;
-    }
-    
-    .empty-state h3 {
-        color: #1e293b;
-        margin-bottom: 0.5rem;
-    }
-    
-    /* Responsive */
     @media (max-width: 768px) {
         .header-flex {
             flex-direction: column;
@@ -371,29 +176,31 @@ st.markdown("""
         .stats-grid {
             grid-template-columns: 1fr;
         }
-        
-        .data-table {
-            font-size: 0.85rem;
-        }
-        
-        .data-table th,
-        .data-table td {
-            padding: 0.6rem;
-        }
-        
-        .action-buttons {
-            flex-direction: column;
-        }
-        
-        .action-buttons .btn {
-            width: 100%;
-        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- AUTHENTIFICATION ---
+# --- FICHIER POUR STOCKER LES APPRENANTS ---
+USERS_FILE = "utilisateurs_apprenants.json"
+
+def load_users():
+    """Charger les utilisateurs apprenants depuis le fichier JSON"""
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_users(users):
+    """Sauvegarder les utilisateurs apprenants"""
+    with open(USERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+# --- AUTHENTIFICATION ADMIN AVEC ST.SECRETS ---
 def check_admin_password():
+    """Vérifier les identifiants admin depuis st.secrets"""
     if "admin_authenticated" not in st.session_state:
         st.session_state.admin_authenticated = False
     
@@ -407,50 +214,39 @@ def check_admin_password():
         
         col1, col2 = st.columns(2)
         with col1:
-            email = st.text_input("Email admin", type="default", key="admin_email")
+            email_input = st.text_input("📧 Email", placeholder="votre-email@example.com", key="admin_email_input")
         with col2:
-            password = st.text_input("Mot de passe", type="password", key="admin_password")
+            pwd_input = st.text_input("🔑 Mot de passe", type="password", placeholder="Entrez votre mot de passe", key="admin_pwd_input")
         
-        if st.button("Se connecter", use_container_width=True):
-            # Vérification simple (À remplacer par une véritable authentification)
-            if email == "admin@campus.fr" and password == "12345678":
-                st.session_state.admin_authenticated = True
-                st.session_state.admin_email = email
-                st.rerun()
-            else:
-                st.error("❌ Identifiants incorrects")
+        if st.button("Se connecter", use_container_width=True, type="primary"):
+            try:
+                # Accéder aux secrets
+                admins_dict = st.secrets.get("admins", {})
+                
+                # Vérifier si l'email existe et le mot de passe correspond
+                if email_input in admins_dict:
+                    if admins_dict[email_input] == pwd_input:
+                        st.session_state.admin_authenticated = True
+                        st.session_state.authenticated_admin_email = email_input
+                        st.rerun()
+                    else:
+                        st.error("❌ Mot de passe incorrect")
+                else:
+                    st.error("❌ Adresse email non trouvée")
+            except Exception as e:
+                st.error("⚠️ Erreur : Vérifiez que les secrets sont configurés dans .streamlit/secrets.toml")
         
-        st.markdown("""
-                <p style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 1.5rem;">
-                    Démo: admin@campus.fr / 12345678
-                </p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
         return False
     
     return True
-
-# --- FUNCTIONS ---
-@st.cache_data
-def load_quiz_data():
-    try:
-        if os.path.exists("data_quizzes.csv"):
-            try:
-                df = pd.read_csv("data_quizzes.csv", encoding="utf-8", sep=";")
-            except:
-                df = pd.read_csv("data_quizzes.csv", encoding="latin1", sep=";")
-            return df
-    except Exception as e:
-        st.error(f"Erreur : {e}")
-    return None
 
 # --- VÉRIFICATION AUTH ---
 if not check_admin_password():
     st.stop()
 
 # --- HEADER ---
-st.markdown("""
+st.markdown(f"""
 <div class="admin-header">
     <div class="header-flex">
         <div>
@@ -458,9 +254,9 @@ st.markdown("""
             <p>Tableau de bord administrateur</p>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
-            <div class="admin-badge">👤 Admin connecté</div>
+            <div class="admin-badge">👤 {st.session_state.authenticated_admin_email}</div>
             <div style="text-align: right; font-size: 0.9rem;">
-                <div style="color: white; font-weight: 600;">""" + st.session_state.get('admin_email', 'Admin') + """</div>
+                <div style="color: white; font-weight: 600;">Administrateur</div>
                 <div style="opacity: 0.9; font-size: 0.85rem;">Interface de gestion</div>
             </div>
         </div>
@@ -471,101 +267,208 @@ st.markdown("""
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
 # --- NAVIGATION ---
-menu = st.tabs(["📊 Tableau de Bord", "📤 Importer des Quiz", "⚙️ Paramètres"])
+menu = st.tabs(["📊 Tableau de Bord", "👥 Utilisateurs", "📤 Importer Quiz", "⚙️ Paramètres"])
 
 # --- TAB 1: DASHBOARD ---
 with menu[0]:
-    df_quiz = load_quiz_data()
+    @st.cache_data
+    def load_quiz_data():
+        try:
+            if os.path.exists("data_quizzes.csv"):
+                try:
+                    df = pd.read_csv("data_quizzes.csv", encoding="utf-8", sep=";")
+                except:
+                    df = pd.read_csv("data_quizzes.csv", encoding="latin1", sep=";")
+                return df
+        except:
+            return None
+        return None
     
-    if df_quiz is None or len(df_quiz) == 0:
-        st.markdown("""
-        <div class="card" style="text-align: center; padding: 2rem;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
-            <h3>Aucun quiz disponible</h3>
-            <p style="color: #64748b;">Importer des quiz pour commencer</p>
+    df_quiz = load_quiz_data()
+    users_data = load_users()
+    
+    st.markdown("""
+    <h2 style="color: #1e293b; margin-bottom: 1rem; font-size: 1.5rem;">📈 Statistiques Globales</h2>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-number">{len(users_data) if users_data else 0}</div>
+            <div class="stat-label">Apprenants</div>
         </div>
         """, unsafe_allow_html=True)
-    else:
-        # Stats
-        st.markdown("""
-        <h2 style="color: #1e293b; margin-bottom: 1rem; font-size: 1.5rem;">📈 Statistiques</h2>
+    
+    with col2:
+        quiz_count = len(df_quiz) if df_quiz is not None else 0
+        st.markdown(f"""
+        <div class="stat-card warning">
+            <div class="stat-number">{quiz_count}</div>
+            <div class="stat-label">Questions</div>
+        </div>
         """, unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="stat-card">
-                <div class="stat-number">{len(df_quiz)}</div>
-                <div class="stat-label">Questions</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            categories = df_quiz['categorie'].nunique() if 'categorie' in df_quiz.columns else 1
-            st.markdown(f"""
-            <div class="stat-card warning">
-                <div class="stat-number">{categories}</div>
-                <div class="stat-label">Catégories</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="stat-card success">
-                <div class="stat-number">✅</div>
-                <div class="stat-label">Actif</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="stat-card danger">
-                <div class="stat-number">🔄</div>
-                <div class="stat-label">À jour</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Quiz Details
-        st.markdown("""
-        <div class="card">
-            <h2>📋 Détail des Questions</h2>
+    
+    with col3:
+        categories = len(df_quiz['categorie'].unique()) if df_quiz is not None and 'categorie' in df_quiz.columns else 0
+        st.markdown(f"""
+        <div class="stat-card success">
+            <div class="stat-number">{categories}</div>
+            <div class="stat-label">Catégories</div>
+        </div>
         """, unsafe_allow_html=True)
-        
-        # Affichage de la table
+    
+    with col4:
+        st.markdown(f"""
+        <div class="stat-card danger">
+            <div class="stat-number">✅</div>
+            <div class="stat-label">En Ligne</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Quiz Details
+    st.markdown("""
+    <div class="card">
+        <h2>📋 Détail des Questions</h2>
+    """, unsafe_allow_html=True)
+    
+    if df_quiz is not None and len(df_quiz) > 0:
         display_df = df_quiz[['question', 'reponse', 'explication']].copy()
         display_df.columns = ['Question', 'Réponse', 'Explication']
-        
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Export button
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+    else:
+        st.info("📋 Aucun quiz disponible. Importer un fichier CSV.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Export button
+    if df_quiz is not None and len(df_quiz) > 0:
         csv = df_quiz.to_csv(index=False, sep=";")
         st.download_button(
-            label="📥 Télécharger toutes les questions (CSV)",
+            label="📥 Télécharger les questions (CSV)",
             data=csv,
-            file_name="quiz_export.csv",
+            file_name=f"quiz_export_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             use_container_width=True
         )
 
-# --- TAB 2: IMPORT ---
+# --- TAB 2: UTILISATEURS ---
 with menu[1]:
-    st.markdown("""
-    <div class="card">
-        <h2>📤 Importer des Quiz</h2>
-        <p style="color: #64748b; margin-bottom: 1.5rem;">Sélectionnez un fichier CSV pour ajouter de nouveaux quiz</p>
-    """, unsafe_allow_html=True)
+    users_data = load_users()
     
-    # Format info
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("<h2 style='color: #1e293b;'>👥 Gestion des Apprenants</h2>", unsafe_allow_html=True)
+    with col2:
+        if st.button("🔄 Rafraîchir", use_container_width=True):
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Stats apprenants
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-number">{len(users_data)}</div>
+            <div class="stat-label">Total Inscrits</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        active_users = len([u for u in users_data if u.get('status', 'actif') == 'actif'])
+        st.markdown(f"""
+        <div class="stat-card success">
+            <div class="stat-number">{active_users}</div>
+            <div class="stat-label">Actifs</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        blocked_users = len([u for u in users_data if u.get('status', 'actif') == 'bloqué'])
+        st.markdown(f"""
+        <div class="stat-card danger">
+            <div class="stat-number">{blocked_users}</div>
+            <div class="stat-label">Bloqués</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Table d'utilisateurs
+    st.markdown("<h3>📊 Liste des Apprenants</h3>", unsafe_allow_html=True)
+    
+    if users_data:
+        # Préparer les données pour affichage
+        display_users = []
+        for idx, user in enumerate(users_data):
+            display_users.append({
+                "ID": idx + 1,
+                "Nom": user.get('nom', ''),
+                "Prénom": user.get('prenom', ''),
+                "Email": user.get('email', ''),
+                "Username": user.get('username', ''),
+                "Status": user.get('status', 'actif'),
+                "Date Inscription": user.get('date_creation', '')
+            })
+        
+        df_display = pd.DataFrame(display_users)
+        st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
+        
+        # Actions sur utilisateurs
+        st.markdown("---")
+        st.markdown("<h3>⚙️ Gestion</h3>", unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            user_names = [f"{u.get('nom', '')} {u.get('prenom', '')}" for u in users_data]
+            user_to_block = st.selectbox(
+                "Sélectionnez un apprenant pour bloquer/débloquer",
+                user_names,
+                key="block_select"
+            )
+            if st.button("🚫 Bloquer/Débloquer", use_container_width=True):
+                for user in users_data:
+                    if f"{user.get('nom', '')} {user.get('prenom', '')}" == user_to_block:
+                        user['status'] = 'bloqué' if user.get('status', 'actif') == 'actif' else 'actif'
+                        break
+                save_users(users_data)
+                st.success("✅ Statut mis à jour")
+                st.rerun()
+        
+        with col2:
+            user_to_delete = st.selectbox(
+                "Sélectionnez un apprenant à supprimer",
+                user_names,
+                key="delete_select"
+            )
+            if st.button("🗑️ Supprimer", use_container_width=True):
+                users_data = [u for u in users_data if f"{u.get('nom', '')} {u.get('prenom', '')}" != user_to_delete]
+                save_users(users_data)
+                st.success("✅ Apprenant supprimé")
+                st.rerun()
+        
+        with col3:
+            if st.button("📥 Exporter (CSV)", use_container_width=True):
+                csv_data = df_display.to_csv(index=False)
+                st.download_button(
+                    label="Télécharger",
+                    data=csv_data,
+                    file_name=f"apprenants_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+    else:
+        st.info("📭 Aucun apprenant inscrit pour le moment")
+
+# --- TAB 3: IMPORTER QUIZ ---
+with menu[2]:
+    st.markdown("<h2 style='color: #1e293b;'>📤 Importer des Quiz</h2>", unsafe_allow_html=True)
+    
     st.markdown("""
     <div style="background: #f0f3f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #0d6efd;">
         <strong>📝 Format attendu :</strong><br>
@@ -574,15 +477,10 @@ with menu[1]:
     </div>
     """, unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader(
-        "Choisir un fichier CSV",
-        type=["csv"],
-        key="quiz_uploader"
-    )
+    uploaded_file = st.file_uploader("Choisir un fichier CSV", type=["csv"], key="quiz_uploader")
     
     if uploaded_file is not None:
         try:
-            # Détection du séparateur
             df_new = pd.read_csv(uploaded_file, sep=";", encoding="utf-8")
             
             st.success("✅ Fichier chargé avec succès !")
@@ -605,94 +503,60 @@ with menu[1]:
                 try:
                     df_new.to_csv("data_quizzes.csv", index=False, sep=";", encoding="utf-8")
                     st.success("✅ Quiz mis à jour avec succès !")
-                    st.info("💡 Rechargez l'app apprenant pour voir les changements")
                     st.cache_data.clear()
                 except Exception as e:
-                    st.error(f"❌ Erreur lors de la sauvegarde : {e}")
+                    st.error(f"❌ Erreur : {e}")
         
         except Exception as e:
-            st.error(f"❌ Erreur de lecture du fichier : {e}")
-            st.info("Assurez-vous que le format est correct (séparateur : ;)")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Example file
-    st.markdown("""
-    <div class="card" style="margin-top: 1.5rem;">
-        <h3>📥 Exemple de fichier</h3>
-        <p style="color: #64748b;">Voici un exemple de structure CSV valide :</p>
-    """, unsafe_allow_html=True)
-    
-    example_data = {
-        "question": ["Quelle est la capitale de la France ?"],
-        "a": ["Paris"],
-        "b": ["Lyon"],
-        "c": ["Marseille"],
-        "d": ["Nice"],
-        "reponse": ["Paris"],
-        "explication": ["Paris est la capitale de la France depuis le 12ème siècle."],
-        "categorie": ["Géographie"]
-    }
-    
-    example_df = pd.DataFrame(example_data)
-    st.dataframe(example_df, use_container_width=True)
-    
-    example_csv = example_df.to_csv(index=False, sep=";")
-    st.download_button(
-        label="📋 Télécharger l'exemple",
-        data=example_csv,
-        file_name="exemple_quiz.csv",
-        mime="text/csv"
-    )
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+            st.error(f"❌ Erreur de lecture : {e}")
 
-# --- TAB 3: SETTINGS ---
-with menu[2]:
-    st.markdown("""
-    <div class="card">
-        <h2>⚙️ Paramètres</h2>
-    """, unsafe_allow_html=True)
-    
+# --- TAB 4: PARAMÈTRES ---
+with menu[3]:
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 🔐 Sécurité")
-        if st.button("🔄 Changer le mot de passe admin"):
-            st.info("Fonctionnalité disponible dans la prochaine version")
+        st.markdown("<h3>🔐 Sécurité</h3>", unsafe_allow_html=True)
+        st.info("✅ Authentification via st.secrets activée")
         
         if st.button("🚪 Déconnexion", use_container_width=True):
             st.session_state.admin_authenticated = False
+            st.session_state.authenticated_admin_email = None
             st.rerun()
     
     with col2:
-        st.markdown("### 📊 Données")
+        st.markdown("<h3>📊 Données</h3>", unsafe_allow_html=True)
+        st.info("📂 Stockage : JSON + CSV")
         
-        df_quiz = load_quiz_data()
-        if df_quiz is not None and len(df_quiz) > 0:
-            if st.button("🗑️ Réinitialiser toutes les données", use_container_width=True):
-                st.warning("Êtes-vous sûr ? Cette action est irréversible.")
-                if st.button("Confirmer la réinitialisation"):
-                    st.info("Fonctionnalité de confirmation en développement")
+        if st.button("💾 Exporter tout", use_container_width=True):
+            # Exporter les apprenants
+            users_data = load_users()
+            df_users = pd.DataFrame(users_data)
+            csv_users = df_users.to_csv(index=False)
+            st.download_button(
+                label="Télécharger utilisateurs",
+                data=csv_users,
+                file_name=f"utilisateurs_backup_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+    
+    st.markdown("---")
     
     st.markdown("""
-        <div style="margin-top: 2rem; padding: 1.5rem; background: #f8fafc; border-radius: 8px; border-left: 4px solid #0d6efd;">
-            <h4 style="margin-bottom: 0.5rem;">ℹ️ À propos</h4>
-            <p style="color: #64748b; margin: 0.3rem 0;">
-                <strong>Campus Réussite</strong> v2.0<br>
-                Plateforme d'apprentissage interactive<br>
-                © 2024 — Tous droits réservés
-            </p>
-        </div>
+    <div style="margin-top: 2rem; padding: 1.5rem; background: #f8fafc; border-radius: 8px; border-left: 4px solid #0d6efd;">
+        <h4 style="margin-bottom: 0.5rem;">ℹ️ À propos</h4>
+        <p style="color: #64748b; margin: 0.3rem 0;">
+            <strong>Campus Réussite</strong> v2.1 (Amélioré)<br>
+            Plateforme d'apprentissage interactive<br>
+            © 2024 — Tous droits réservés
+        </p>
+    </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- FOOTER ---
 st.markdown("""
 <div style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 3rem; padding: 2rem; border-top: 1px solid #e2e8f0;">
-    <p>Campus Réussite — Tableau de bord administrateur | Version 2.0</p>
+    <p>Campus Réussite — Tableau de bord administrateur v2.1</p>
 </div>
 """, unsafe_allow_html=True)
