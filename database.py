@@ -1,6 +1,7 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
+import streamlit as st
 
 DB_PATH = "campus_reussite.db"
 
@@ -74,10 +75,12 @@ def save_user(user_data):
         ))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except sqlite3.IntegrityError:
         return False
 
+@st.cache_data
 def load_users():
     """Charger tous les utilisateurs"""
     init_database()
@@ -88,6 +91,18 @@ def load_users():
         return df.to_dict('records') if len(df) > 0 else []
     except:
         return []
+
+@st.cache_data
+def load_quiz():
+    """Charger tous les quiz"""
+    init_database()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("SELECT question, a, b, c, d, reponses_correctes, explication, categorie FROM quiz", conn)
+        conn.close()
+        return df if len(df) > 0 else None
+    except:
+        return None
 
 def add_quiz(question, a, b, c, d, correct, explication, categorie):
     """Ajouter un quiz"""
@@ -101,17 +116,19 @@ def add_quiz(question, a, b, c, d, correct, explication, categorie):
         ''', (question, a, b, c, d, correct, explication, categorie))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except Exception as e:
         print(f"Erreur quiz: {e}")
         return False
 
-def load_quiz():
-    """Charger tous les quiz"""
+@st.cache_data
+def load_feedback():
+    """Charger tous les feedbacks"""
     init_database()
     try:
         conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query("SELECT question, a, b, c, d, reponses_correctes, explication, categorie FROM quiz", conn)
+        df = pd.read_sql_query("SELECT email, titre, message, type, date FROM feedback ORDER BY date DESC", conn)
         conn.close()
         return df if len(df) > 0 else None
     except:
@@ -135,21 +152,11 @@ def save_feedback(feedback_data):
         ))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except Exception as e:
         print(f"Erreur feedback: {e}")
         return False
-
-def load_feedback():
-    """Charger tous les feedbacks"""
-    init_database()
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query("SELECT email, titre, message, type, date FROM feedback ORDER BY date DESC", conn)
-        conn.close()
-        return df if len(df) > 0 else None
-    except:
-        return None
 
 def block_user(email):
     """Bloquer un utilisateur"""
@@ -160,6 +167,7 @@ def block_user(email):
         cursor.execute("UPDATE utilisateurs SET status = 'bloqué' WHERE email = ?", (email,))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except:
         return False
@@ -173,6 +181,7 @@ def unblock_user(email):
         cursor.execute("UPDATE utilisateurs SET status = 'actif' WHERE email = ?", (email,))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except:
         return False
@@ -186,6 +195,7 @@ def delete_user(email):
         cursor.execute("DELETE FROM utilisateurs WHERE email = ?", (email,))
         conn.commit()
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except:
         return False
@@ -205,6 +215,7 @@ def toggle_user_status(email):
             conn.commit()
         
         conn.close()
+        st.cache_data.clear()  # ✅ Vider le cache
         return True
     except:
         return False
