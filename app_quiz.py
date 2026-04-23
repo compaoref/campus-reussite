@@ -12,7 +12,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- FONCTION POUR CONVERTIR LOGO EN BASE64 ---
+# --- INITIALISATION DATABASE ---
+init_database()
+
 def get_image_base64(image_path):
     """Convertir image en base64 pour utiliser comme fond"""
     try:
@@ -40,7 +42,6 @@ else:
     }}
     """
 
-# CSS COMPLET
 st.markdown(f"""
 <style>
     * {{
@@ -51,7 +52,6 @@ st.markdown(f"""
     
     {fond_css}
     
-    /* LOGIN */
     .login-page {{
         display: flex;
         align-items: center;
@@ -99,35 +99,6 @@ st.markdown(f"""
         font-size: 0.95rem;
     }}
     
-    .login-form {{
-        display: flex;
-        flex-direction: column;
-        gap: 1.2rem;
-    }}
-    
-    .form-input {{
-        padding: 0.9rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 10px;
-        font-size: 0.95rem;
-        transition: all 0.3s ease;
-        font-family: 'Inter', 'Segoe UI', sans-serif;
-    }}
-    
-    .form-input:focus {{
-        outline: none;
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
-    }}
-    
-    .form-label {{
-        color: #0f172a;
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.4rem;
-    }}
-    
-    /* HEADER */
     .header {{
         background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
         color: white;
@@ -160,12 +131,6 @@ st.markdown(f"""
         justify-content: center;
         backdrop-filter: blur(10px);
         border: 2px solid rgba(255, 255, 255, 0.3);
-    }}
-    
-    .logo-container img {{
-        width: 90%;
-        height: 90%;
-        object-fit: contain;
     }}
     
     .title-section h1 {{
@@ -227,35 +192,6 @@ st.markdown(f"""
         margin-top: 0.5rem;
     }}
     
-    .nav-buttons {{
-        display: flex;
-        gap: 0.8rem;
-        margin-bottom: 1.5rem;
-        flex-wrap: wrap;
-    }}
-    
-    .nav-btn {{
-        padding: 0.7rem 1.5rem;
-        border: 2px solid #e5e7eb;
-        background: white;
-        border-radius: 10px;
-        cursor: pointer;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        font-size: 0.95rem;
-    }}
-    
-    .nav-btn:hover {{
-        border-color: #0d6efd;
-        background: #f6f8fb;
-    }}
-    
-    .nav-btn.active {{
-        background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
-        color: white;
-        border-color: #0d6efd;
-    }}
-    
     .quiz-container {{
         background: white;
         padding: 2rem;
@@ -296,33 +232,6 @@ st.markdown(f"""
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
     }}
     
-    .form-group {{
-        margin-bottom: 1.5rem;
-    }}
-    
-    .form-group label {{
-        display: block;
-        color: #0f172a;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }}
-    
-    .form-group input,
-    .form-group textarea,
-    .form-group select {{
-        width: 100%;
-        padding: 0.8rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 8px;
-        font-family: 'Inter', 'Segoe UI', sans-serif;
-        font-size: 0.95rem;
-    }}
-    
-    .form-group textarea {{
-        min-height: 120px;
-        resize: vertical;
-    }}
-    
     .profile-header {{
         background: linear-gradient(135deg, #0d6efd 0%, #0251d9 100%);
         color: white;
@@ -343,14 +252,11 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION DATABASE ---
-init_database()
-
 def is_valid_email(email):
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
 
-# --- INITIALISATION SESSION ---
+# SESSION STATE
 if "user_logged_in" not in st.session_state:
     st.session_state.user_logged_in = False
 if "current_user" not in st.session_state:
@@ -360,9 +266,8 @@ if "auth_mode" not in st.session_state:
 if "current_page" not in st.session_state:
     st.session_state.current_page = "accueil"
 
-# --- PAGE CONNEXION PROFESSIONNELLE ---
 def render_auth():
-    """Page d'authentification professionnelle"""
+    """Page d'authentification"""
     st.markdown('<div class="login-page">', unsafe_allow_html=True)
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
@@ -391,7 +296,6 @@ def render_auth():
     if st.session_state.auth_mode == "login":
         st.markdown("<h3 style='text-align: center; color: #0f172a; margin-bottom: 1.5rem;'>Connexion</h3>", unsafe_allow_html=True)
         
-        # Vérifier admin
         try:
             admins = st.secrets.get("admins", {})
         except:
@@ -422,7 +326,7 @@ def render_auth():
                         st.rerun()
                 st.error("❌ Identifiants incorrects")
     
-    else:  # signup
+    else:
         st.markdown("<h3 style='text-align: center; color: #0f172a; margin-bottom: 1.5rem;'>Créer un Compte</h3>", unsafe_allow_html=True)
         
         nom = st.text_input("👤 Nom", placeholder="Votre nom", key="signup_nom")
@@ -461,13 +365,11 @@ def render_auth():
     
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-# --- APP PRINCIPALE ---
 if not st.session_state.user_logged_in:
     render_auth()
 else:
     user = st.session_state.current_user
     
-    # Header
     st.markdown(f"""
     <div class="header">
         <div class="header-content">
@@ -489,7 +391,6 @@ else:
     
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     
-    # Navigation
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         if st.button("🏠 Accueil", use_container_width=True):
@@ -515,7 +416,6 @@ else:
     
     st.markdown("---")
     
-    # PAGES
     if st.session_state.current_page == "accueil":
         st.markdown("""
         <div class="welcome-card">
@@ -552,12 +452,14 @@ else:
     
     elif st.session_state.current_page == "quiz":
         st.markdown('<div class="quiz-container">', unsafe_allow_html=True)
+        
         df_quiz = load_quiz()
+        st.write("DEBUG: load_quiz() returned:", type(df_quiz), "Length:", len(df_quiz) if df_quiz is not None else "None")
         
         if df_quiz is None or len(df_quiz) == 0:
             st.info("📋 Aucun quiz disponible pour le moment")
         else:
-            categories = df_quiz['categorie'].unique().tolist() if 'categorie' in df_quiz.columns else []
+            categories = df_quiz['categorie'].unique().tolist()
             selected_cat = st.selectbox("Sélectionner une catégorie :", categories)
             
             cat_quizzes = df_quiz[df_quiz['categorie'] == selected_cat]
@@ -577,10 +479,10 @@ else:
                 selected = st.multiselect(
                     "Choisir la/les réponse(s) :",
                     options,
-                    key=f"q_{i}"
+                    key=f"q_{i}_{idx}"
                 )
                 
-                if st.button(f"Valider Q{idx + 1}", key=f"btn_{i}"):
+                if st.button(f"Valider Q{idx + 1}", key=f"btn_{i}_{idx}"):
                     is_correct = set(selected) == set(correct)
                     if is_correct:
                         st.success("🎯 Correct !")
@@ -629,8 +531,11 @@ else:
                         'type': msg_type,
                         'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
-                    save_feedback(feedback)
-                    st.success("✅ Feedback envoyé !")
+                    success = save_feedback(feedback)
+                    if success:
+                        st.success("✅ Feedback envoyé !")
+                    else:
+                        st.error("❌ Erreur lors de l'envoi")
                 else:
                     st.error("❌ Remplissez tous les champs")
         
