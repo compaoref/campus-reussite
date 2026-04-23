@@ -7,7 +7,7 @@ DB_PATH = "campus_reussite.db"
 
 def init_database():
     """Initialiser la base de données SQLite"""
-    if not os.path.exists(DB_PATH):
+    try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
@@ -55,6 +55,9 @@ def init_database():
         
         conn.commit()
         conn.close()
+        print("✅ Database initialized")
+    except Exception as e:
+        print(f"Erreur init_database: {e}")
 
 def save_user(user_data):
     """Enregistrer un utilisateur"""
@@ -76,6 +79,7 @@ def save_user(user_data):
         ))
         conn.commit()
         conn.close()
+        print(f"✅ User saved: {user_data['email']}")
         return True
     except sqlite3.IntegrityError as e:
         print(f"Erreur: Email ou username déjà utilisé - {e}")
@@ -96,6 +100,7 @@ def load_users():
         conn.close()
         
         result = [dict(row) for row in rows] if rows else []
+        print(f"✅ Loaded {len(result)} users")
         return result
     except Exception as e:
         print(f"Erreur load_users: {e}")
@@ -107,6 +112,14 @@ def add_quiz(question, a, b, c, d, correct, explication, categorie):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        
+        # Vérifier si la question existe déjà
+        cursor.execute("SELECT id FROM quiz WHERE question = ?", (question,))
+        if cursor.fetchone():
+            conn.close()
+            print(f"⚠️ Quiz déjà existant: {question}")
+            return False
+        
         cursor.execute('''
             INSERT INTO quiz (question, a, b, c, d, reponses_correctes, explication, categorie)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -124,19 +137,30 @@ def load_quiz():
     init_database()
     try:
         conn = sqlite3.connect(DB_PATH)
+        
+        # Vérifier si la table a des données
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM quiz")
+        count = cursor.fetchone()[0]
+        print(f"DEBUG: Quiz count in DB: {count}")
+        
+        # Charger les données
         df = pd.read_sql_query(
             "SELECT question, a, b, c, d, reponses_correctes, explication, categorie FROM quiz ORDER BY date_creation DESC",
             conn
         )
         conn.close()
         
-        if len(df) > 0:
-            return df
-        else:
-            return None
+        print(f"✅ Loaded {len(df)} quizzes")
+        print(f"DEBUG: DataFrame shape: {df.shape}")
+        print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
+        
+        return df if len(df) > 0 else pd.DataFrame()
     except Exception as e:
         print(f"Erreur load_quiz: {e}")
-        return None
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 def save_feedback(feedback_data):
     """Enregistrer un feedback"""
@@ -173,13 +197,11 @@ def load_feedback():
         )
         conn.close()
         
-        if len(df) > 0:
-            return df
-        else:
-            return None
+        print(f"✅ Loaded {len(df)} feedbacks")
+        return df if len(df) > 0 else pd.DataFrame()
     except Exception as e:
         print(f"Erreur load_feedback: {e}")
-        return None
+        return pd.DataFrame()
 
 def delete_user(email):
     """Supprimer un utilisateur"""
@@ -231,17 +253,29 @@ def check_quiz_exists(question):
         print(f"Erreur check_quiz_exists: {e}")
         return False
 
-def clear_all_quizzes():
-    """Supprimer tous les quiz (utilisé avant import)"""
+def get_db_info():
+    """Obtenir des informations sur la base de données"""
     init_database()
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM quiz")
-        conn.commit()
+        
+        cursor.execute("SELECT COUNT(*) FROM utilisateurs")
+        users_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM quiz")
+        quiz_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM feedback")
+        feedback_count = cursor.fetchone()[0]
+        
         conn.close()
-        print("✅ Tous les quiz supprimés")
-        return True
+        
+        return {
+            'users': users_count,
+            'quiz': quiz_count,
+            'feedback': feedback_count
+        }
     except Exception as e:
-        print(f"Erreur clear_all_quizzes: {e}")
-        return False
+        print(f"Erreur get_db_info: {e}")
+        return {'users': 0, 'quiz': 0, 'feedback': 0}
