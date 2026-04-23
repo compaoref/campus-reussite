@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from database import load_users, load_quiz, load_feedback, add_quiz, init_database, block_user, unblock_user, delete_user, toggle_user_status
+from database import (
+    load_users, load_quiz, load_feedback, add_quiz, init_database,
+    delete_user, toggle_user_status, clear_all_quizzes, check_quiz_exists
+)
 
 st.set_page_config(
     page_title="Campus Réussite - Admin",
@@ -11,7 +14,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* LOGIN */
     .admin-login {{
         display: flex;
         align-items: center;
@@ -118,10 +120,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION DATABASE ---
 init_database()
 
-# --- AUTHENTIFICATION ---
 def check_auth():
     """Vérifier authentification"""
     if "admin_authenticated" not in st.session_state:
@@ -161,7 +161,6 @@ def check_auth():
 if not check_auth():
     st.stop()
 
-# --- HEADER ---
 st.markdown(f"""
 <div class="admin-header">
     <h1>🎓 Campus Réussite - Administration</h1>
@@ -171,7 +170,6 @@ st.markdown(f"""
 
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
-# --- NAVIGATION ---
 menu = st.tabs(["📊 Dashboard", "🎯 Gestion Quiz", "👥 Apprenants", "💬 Feedback", "⚙️ Paramètres"])
 
 # --- TAB 1: DASHBOARD ---
@@ -239,7 +237,7 @@ with menu[1]:
     with col1:
         st.markdown("### ➕ Créer un Quiz")
         
-        with st.form("new_quiz_form"):
+        with st.form("new_quiz_form", clear_on_submit=True):
             question = st.text_input("Question")
             col_a, col_b = st.columns(2)
             with col_a:
@@ -252,27 +250,31 @@ with menu[1]:
             st.markdown("**Bonnes réponses :**")
             col_cb1, col_cb2 = st.columns(2)
             with col_cb1:
-                cb_a = st.checkbox("A")
-                cb_c = st.checkbox("C")
+                cb_a = st.checkbox("A", key="cb_a")
+                cb_c = st.checkbox("C", key="cb_c")
             with col_cb2:
-                cb_b = st.checkbox("B")
-                cb_d = st.checkbox("D")
-            
-            correct_answers = []
-            if cb_a: correct_answers.append("A")
-            if cb_b: correct_answers.append("B")
-            if cb_c: correct_answers.append("C")
-            if cb_d: correct_answers.append("D")
+                cb_b = st.checkbox("B", key="cb_b")
+                cb_d = st.checkbox("D", key="cb_d")
             
             explication = st.text_area("Explication")
             categorie = st.text_input("Catégorie")
             
-            if st.form_submit_button("➕ Ajouter", use_container_width=True):
+            submitted = st.form_submit_button("➕ Ajouter", use_container_width=True)
+            if submitted:
+                correct_answers = []
+                if cb_a: correct_answers.append("A")
+                if cb_b: correct_answers.append("B")
+                if cb_c: correct_answers.append("C")
+                if cb_d: correct_answers.append("D")
+                
                 if all([question, opt_a, opt_b, opt_c, opt_d, explication, categorie, correct_answers]):
                     correct_str = ", ".join(correct_answers)
-                    add_quiz(question, opt_a, opt_b, opt_c, opt_d, correct_str, explication, categorie)
-                    st.success("✅ Quiz ajouté !")
-                    st.rerun()
+                    success = add_quiz(question, opt_a, opt_b, opt_c, opt_d, correct_str, explication, categorie)
+                    if success:
+                        st.success("✅ Quiz ajouté !")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erreur lors de l'ajout")
                 else:
                     st.error("❌ Remplissez tous les champs")
     
@@ -284,19 +286,13 @@ with menu[1]:
         if uploaded:
             try:
                 df = pd.read_csv(uploaded, sep=";", encoding='utf-8')
-                
                 st.success("✅ Fichier chargé")
                 st.dataframe(df, use_container_width=True, height=300)
                 
                 if st.button("🚀 Importer", use_container_width=True):
-                    existing = load_quiz()
-                    if existing is not None:
-                        merged = pd.concat([existing, df], ignore_index=True)
-                    else:
-                        merged = df
-                    
-                    for idx, row in merged.iterrows():
-                        add_quiz(
+                    count = 0
+                    for idx, row in df.iterrows():
+                        success = add_quiz(
                             row.get('question', ''),
                             row.get('a', ''),
                             row.get('b', ''),
@@ -306,7 +302,9 @@ with menu[1]:
                             row.get('explication', ''),
                             row.get('categorie', '')
                         )
-                    st.success("✅ Quiz importés !")
+                        if success:
+                            count += 1
+                    st.success(f"✅ {count} quiz importés !")
                     st.rerun()
             except Exception as e:
                 st.error(f"❌ Erreur : {e}")
