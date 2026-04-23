@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+from database import load_users, load_quiz, load_feedback, add_quiz, init_database, block_user, unblock_user, delete_user, toggle_user_status
 
 st.set_page_config(
     page_title="Campus Réussite - Admin",
@@ -117,68 +118,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FICHIERS CSV ---
-USERS_CSV = "utilisateurs.csv"
-QUIZ_CSV = "data_quizzes.csv"
-FEEDBACK_CSV = "feedback.csv"
-
-def init_files():
-    """Initialiser les fichiers CSV"""
-    if not os.path.exists(USERS_CSV):
-        df = pd.DataFrame(columns=['nom', 'prenom', 'email', 'username', 'password', 'status', 'date_creation'])
-        df.to_csv(USERS_CSV, index=False, encoding='utf-8')
-    
-    if not os.path.exists(QUIZ_CSV):
-        df = pd.DataFrame(columns=['question', 'a', 'b', 'c', 'd', 'reponses_correctes', 'explication', 'categorie'])
-        df.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
-    
-    if not os.path.exists(FEEDBACK_CSV):
-        df = pd.DataFrame(columns=['email', 'titre', 'message', 'type', 'date'])
-        df.to_csv(FEEDBACK_CSV, index=False, encoding='utf-8')
-
-def load_quiz():
-    """Charger les quiz"""
-    init_files()
-    try:
-        df = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
-        return df if len(df) > 0 else None
-    except:
-        return None
-
-def load_users():
-    """Charger les apprenants"""
-    init_files()
-    try:
-        df = pd.read_csv(USERS_CSV, encoding='utf-8')
-        return df.to_dict('records') if len(df) > 0 else []
-    except:
-        return []
-
-def add_quiz(question, a, b, c, d, correct, explication, categorie):
-    """Ajouter un quiz"""
-    init_files()
-    df = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
-    new_row = pd.DataFrame([{
-        'question': question,
-        'a': a,
-        'b': b,
-        'c': c,
-        'd': d,
-        'reponses_correctes': correct,
-        'explication': explication,
-        'categorie': categorie
-    }])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
-
-def load_feedback():
-    """Charger les feedbacks"""
-    init_files()
-    try:
-        df = pd.read_csv(FEEDBACK_CSV, encoding='utf-8')
-        return df if len(df) > 0 else None
-    except:
-        return None
+# --- INITIALISATION DATABASE ---
+init_database()
 
 # --- AUTHENTIFICATION ---
 def check_auth():
@@ -235,7 +176,6 @@ menu = st.tabs(["📊 Dashboard", "🎯 Gestion Quiz", "👥 Apprenants", "💬 
 
 # --- TAB 1: DASHBOARD ---
 with menu[0]:
-    init_files()
     df_quiz = load_quiz()
     users = load_users()
     
@@ -282,8 +222,8 @@ with menu[0]:
     st.markdown('<div class="card"><h2>📋 Détail des Questions</h2>', unsafe_allow_html=True)
     
     if df_quiz is not None and len(df_quiz) > 0:
-        display_df = df_quiz[['question', 'reponses_correctes', 'explication', 'categorie']].copy() if all(col in df_quiz.columns for col in ['question', 'reponses_correctes', 'explication', 'categorie']) else df_quiz
-        display_df.columns = ['Question', 'Réponses', 'Explication', 'Catégorie'] if 'reponses_correctes' in display_df.columns else display_df.columns
+        display_df = df_quiz[['question', 'reponses_correctes', 'explication', 'categorie']].copy()
+        display_df.columns = ['Question', 'Réponses', 'Explication', 'Catégorie']
         st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
     else:
         st.info("Aucun quiz")
@@ -332,6 +272,7 @@ with menu[1]:
                     correct_str = ", ".join(correct_answers)
                     add_quiz(question, opt_a, opt_b, opt_c, opt_d, correct_str, explication, categorie)
                     st.success("✅ Quiz ajouté !")
+                    st.rerun()
                 else:
                     st.error("❌ Remplissez tous les champs")
     
@@ -348,10 +289,25 @@ with menu[1]:
                 st.dataframe(df, use_container_width=True, height=300)
                 
                 if st.button("🚀 Importer", use_container_width=True):
-                    existing = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
-                    merged = pd.concat([existing, df], ignore_index=True)
-                    merged.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
+                    existing = load_quiz()
+                    if existing is not None:
+                        merged = pd.concat([existing, df], ignore_index=True)
+                    else:
+                        merged = df
+                    
+                    for idx, row in merged.iterrows():
+                        add_quiz(
+                            row.get('question', ''),
+                            row.get('a', ''),
+                            row.get('b', ''),
+                            row.get('c', ''),
+                            row.get('d', ''),
+                            row.get('reponses_correctes', ''),
+                            row.get('explication', ''),
+                            row.get('categorie', '')
+                        )
                     st.success("✅ Quiz importés !")
+                    st.rerun()
             except Exception as e:
                 st.error(f"❌ Erreur : {e}")
 
@@ -393,26 +349,19 @@ with menu[2]:
         col1, col2 = st.columns(2)
         
         with col1:
-            user_names = [f"{u['nom']} {u['prenom']}" for u in users]
-            to_block = st.selectbox("Bloquer/Débloquer", user_names)
+            user_emails = [u['email'] for u in users]
+            to_toggle = st.selectbox("Bloquer/Débloquer", user_emails, key="toggle")
             
-            if st.button("🚫 Appliquer", use_container_width=True):
-                df = pd.read_csv(USERS_CSV, encoding='utf-8')
-                for idx, row in df.iterrows():
-                    if f"{row['nom']} {row['prenom']}" == to_block:
-                        df.at[idx, 'status'] = 'actif' if row['status'] == 'bloqué' else 'bloqué'
-                        break
-                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
+            if st.button("🔄 Appliquer", use_container_width=True):
+                toggle_user_status(to_toggle)
                 st.success("✅ Statut changé")
                 st.rerun()
         
         with col2:
-            to_delete = st.selectbox("Supprimer", user_names, key="del")
+            to_delete = st.selectbox("Supprimer", user_emails, key="del")
             
             if st.button("🗑️ Supprimer", use_container_width=True):
-                df = pd.read_csv(USERS_CSV, encoding='utf-8')
-                df = df[~((df['nom'] + ' ' + df['prenom']) == to_delete)]
-                df.to_csv(USERS_CSV, index=False, encoding='utf-8')
+                delete_user(to_delete)
                 st.success("✅ Supprimé")
                 st.rerun()
         
@@ -463,7 +412,8 @@ with menu[4]:
         st.markdown("### 📊 Données")
         
         if st.button("💾 Exporter Tout", use_container_width=True):
-            df_users = pd.read_csv(USERS_CSV, encoding='utf-8')
+            users = load_users()
+            df_users = pd.DataFrame(users)
             csv = df_users.to_csv(index=False)
             st.download_button(
                 "Users CSV",
