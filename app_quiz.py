@@ -4,6 +4,7 @@ import os
 import re
 import base64
 from datetime import datetime
+from database import load_users, save_user, load_quiz, save_feedback, init_database
 
 st.set_page_config(
     page_title="Campus Réussite",
@@ -342,61 +343,8 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION CSV ---
-USERS_CSV = "utilisateurs.csv"
-QUIZ_CSV = "data_quizzes.csv"
-FEEDBACK_CSV = "feedback.csv"
-
-def init_csv_files():
-    """Créer les CSV avec les bonnes colonnes"""
-    if not os.path.exists(USERS_CSV):
-        df = pd.DataFrame(columns=['nom', 'prenom', 'email', 'username', 'password', 'status', 'date_creation'])
-        df.to_csv(USERS_CSV, index=False, encoding='utf-8')
-    
-    if not os.path.exists(QUIZ_CSV):
-        df = pd.DataFrame(columns=['question', 'a', 'b', 'c', 'd', 'reponses_correctes', 'explication', 'categorie'])
-        df.to_csv(QUIZ_CSV, index=False, sep=";", encoding='utf-8')
-    
-    if not os.path.exists(FEEDBACK_CSV):
-        df = pd.DataFrame(columns=['email', 'titre', 'message', 'type', 'date'])
-        df.to_csv(FEEDBACK_CSV, index=False, encoding='utf-8')
-
-def load_users():
-    """Charger les utilisateurs"""
-    init_csv_files()
-    try:
-        df = pd.read_csv(USERS_CSV, encoding='utf-8')
-        return df.to_dict('records') if len(df) > 0 else []
-    except:
-        return []
-
-def load_quiz():
-    """Charger les quiz"""
-    init_csv_files()
-    try:
-        df = pd.read_csv(QUIZ_CSV, sep=";", encoding='utf-8')
-        return df if len(df) > 0 else None
-    except:
-        return None
-
-def save_user(user_data):
-    """Ajouter un utilisateur"""
-    init_csv_files()
-    df = pd.read_csv(USERS_CSV, encoding='utf-8')
-    new_row = pd.DataFrame([user_data])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(USERS_CSV, index=False, encoding='utf-8')
-
-def save_feedback(feedback_data):
-    """Enregistrer un feedback"""
-    init_csv_files()
-    try:
-        df = pd.read_csv(FEEDBACK_CSV, encoding='utf-8')
-    except:
-        df = pd.DataFrame(columns=['email', 'titre', 'message', 'type', 'date'])
-    new_row = pd.DataFrame([feedback_data])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(FEEDBACK_CSV, index=False, encoding='utf-8')
+# --- INITIALISATION DATABASE ---
+init_database()
 
 def is_valid_email(email):
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
