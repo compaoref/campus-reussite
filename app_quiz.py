@@ -4,7 +4,7 @@ import os
 import re
 import base64
 from datetime import datetime
-from database import load_users, save_user, load_quiz, save_feedback, init_database
+from database import load_users, save_user, load_quiz, save_feedback, init_database, get_db_info
 
 st.set_page_config(
     page_title="Campus Réussite",
@@ -425,7 +425,7 @@ else:
         """, unsafe_allow_html=True)
         
         df_quiz = load_quiz()
-        quiz_count = len(df_quiz) if df_quiz is not None else 0
+        quiz_count = len(df_quiz) if isinstance(df_quiz, pd.DataFrame) and len(df_quiz) > 0 else 0
         
         st.markdown("""
         <div class="stats-grid">
@@ -453,45 +453,60 @@ else:
     elif st.session_state.current_page == "quiz":
         st.markdown('<div class="quiz-container">', unsafe_allow_html=True)
         
-        df_quiz = load_quiz()
-        st.write("DEBUG: load_quiz() returned:", type(df_quiz), "Length:", len(df_quiz) if df_quiz is not None else "None")
+        # Afficher les infos de debug
+        db_info = get_db_info()
+        st.write(f"📊 Infos DB - Utilisateurs: {db_info['users']} | Quiz: {db_info['quiz']} | Feedback: {db_info['feedback']}")
         
-        if df_quiz is None or len(df_quiz) == 0:
+        df_quiz = load_quiz()
+        st.write(f"DEBUG: Type de df_quiz: {type(df_quiz)}")
+        st.write(f"DEBUG: df_quiz est vide? {df_quiz.empty if isinstance(df_quiz, pd.DataFrame) else 'N/A'}")
+        st.write(f"DEBUG: len(df_quiz): {len(df_quiz) if isinstance(df_quiz, pd.DataFrame) else 'N/A'}")
+        
+        # Vérifier les conditions correctement
+        if df_quiz is None or (isinstance(df_quiz, pd.DataFrame) and len(df_quiz) == 0):
             st.info("📋 Aucun quiz disponible pour le moment")
         else:
-            categories = df_quiz['categorie'].unique().tolist()
-            selected_cat = st.selectbox("Sélectionner une catégorie :", categories)
-            
-            cat_quizzes = df_quiz[df_quiz['categorie'] == selected_cat]
-            
-            for idx, (i, row) in enumerate(cat_quizzes.iterrows()):
-                st.markdown(f"""
-                <div class="question-card">
-                    <div class="question-badge">Question {idx + 1}/{len(cat_quizzes)}</div>
-                    <div class="question-text">{row.get('question', 'Question')}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            try:
+                categories = df_quiz['categorie'].unique().tolist()
+                st.write(f"✅ Catégories trouvées: {categories}")
                 
-                options = [row.get('a', ''), row.get('b', ''), row.get('c', ''), row.get('d', '')]
-                correct = str(row.get('reponses_correctes', '')).split(',')
-                correct = [c.strip() for c in correct]
+                selected_cat = st.selectbox("Sélectionner une catégorie :", categories)
                 
-                selected = st.multiselect(
-                    "Choisir la/les réponse(s) :",
-                    options,
-                    key=f"q_{i}_{idx}"
-                )
+                cat_quizzes = df_quiz[df_quiz['categorie'] == selected_cat]
+                st.write(f"✅ {len(cat_quizzes)} quiz dans la catégorie '{selected_cat}'")
                 
-                if st.button(f"Valider Q{idx + 1}", key=f"btn_{i}_{idx}"):
-                    is_correct = set(selected) == set(correct)
-                    if is_correct:
-                        st.success("🎯 Correct !")
-                        st.balloons()
-                    else:
-                        st.error(f"❌ Bonnes réponses : {', '.join(correct)}")
-                    st.info(f"💡 {row.get('explication', '')}")
-                
-                st.markdown("---")
+                for idx, (i, row) in enumerate(cat_quizzes.iterrows()):
+                    st.markdown(f"""
+                    <div class="question-card">
+                        <div class="question-badge">Question {idx + 1}/{len(cat_quizzes)}</div>
+                        <div class="question-text">{row.get('question', 'Question')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    options = [row.get('a', ''), row.get('b', ''), row.get('c', ''), row.get('d', '')]
+                    correct = str(row.get('reponses_correctes', '')).split(',')
+                    correct = [c.strip() for c in correct]
+                    
+                    selected = st.multiselect(
+                        "Choisir la/les réponse(s) :",
+                        options,
+                        key=f"q_{i}_{idx}"
+                    )
+                    
+                    if st.button(f"Valider Q{idx + 1}", key=f"btn_{i}_{idx}"):
+                        is_correct = set(selected) == set(correct)
+                        if is_correct:
+                            st.success("🎯 Correct !")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ Bonnes réponses : {', '.join(correct)}")
+                        st.info(f"💡 {row.get('explication', '')}")
+                    
+                    st.markdown("---")
+            except Exception as e:
+                st.error(f"Erreur: {e}")
+                import traceback
+                st.write(traceback.format_exc())
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -517,7 +532,7 @@ else:
             <p style="color: #6b7280; margin-bottom: 1.5rem;">Partagez vos suggestions</p>
         """, unsafe_allow_html=True)
         
-        with st.form("feedback_form"):
+        with st.form("feedback_form", clear_on_submit=True):
             titre = st.text_input("Titre", placeholder="Résumez votre avis")
             msg_type = st.selectbox("Type", ["Suggestion", "Problème", "Autre"])
             message = st.text_area("Message", placeholder="Détails...")
