@@ -1,58 +1,6 @@
 import streamlit as st
 import re
 from database import db
-import os, sqlite3, stat, traceback
-
-# --- DIAGNOSTIC COMPLET DB (très verbeux, temporaire) ---
-DBP = None
-try:
-    DBP = db.get_db_path()
-    st.sidebar.write("=== DIAGNOSTIC DB ===")
-    st.sidebar.write("**Path configured:**", DBP)
-    st.sidebar.write("**exists:**", os.path.exists(DBP))
-    
-    if os.path.exists(DBP):
-        st.sidebar.write("**size (bytes):**", os.path.getsize(DBP))
-        import time
-        mtime = os.path.getmtime(DBP)
-        st.sidebar.write("**last modified (timestamp):**", mtime)
-        st.sidebar.write("**last modified (human):**", time.ctime(mtime))
-        
-        # perms
-        mode = os.stat(DBP).st_mode
-        st.sidebar.write("**perms (octal):**", oct(mode & 0o777))
-    else:
-        st.sidebar.write("❌ Fichier DB n'existe pas!")
-        st.sidebar.write("Creating tables now...")
-        # force init
-        db.init_db()
-        st.sidebar.write("✅ Init called")
-    
-    # Try to list sqlite tables and counts
-    try:
-        conn = sqlite3.connect(DBP)
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [r[0] for r in cur.fetchall()]
-        st.sidebar.write("**Tables found:**", tables)
-        
-        for t in tables:
-            try:
-                cur.execute(f"SELECT COUNT(*) FROM {t}")
-                cnt = cur.fetchone()[0]
-                st.sidebar.write(f"  └─ `{t}`: **{cnt}** rows")
-            except Exception as e:
-                st.sidebar.write(f"  └─ `{t}` ERROR: {e}")
-        
-        conn.close()
-    except Exception as e:
-        st.sidebar.error(f"SQLite connection error: {e}")
-        st.sidebar.write(traceback.format_exc())
-        
-except Exception as e:
-    st.sidebar.error(f"Diagnostic error: {e}")
-    st.sidebar.write(traceback.format_exc())
-# --- FIN DIAGNOSTIC ---
 
 st.set_page_config(page_title="Campus Réussite", layout="wide")
 
@@ -65,6 +13,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Optional debug in sidebar when environment variable DEBUG_DB=1 is set
+if str(os.environ.get("DEBUG_DB", "")).strip() == "1":
+    try:
+        st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
+        st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
+    except Exception:
+        pass
+
 # --- INITIALISATION SESSION ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -75,14 +31,6 @@ if "page" not in st.session_state:
 
 def is_valid_email(email):
     return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
-
-# --- DEBUG: afficher chemin DB et counts ( temporaire ) ---
-try:
-    # affiche dans la barre latérale pour ne pas polluer l'UI principale
-    st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
-    st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
-except Exception as e:
-    st.sidebar.error(f"DEBUG ERREUR: {e}")
 
 # --- PAGE AUTHENTICATION ---
 if not st.session_state.logged_in:
@@ -107,7 +55,6 @@ if not st.session_state.logged_in:
             pwd = st.text_input("Mot de passe", type="password")
             
             if st.button("Se Connecter", use_container_width=True, type="primary"):
-                # Vérifier admin
                 try:
                     admins = st.secrets.get("admins", {})
                     if email in admins and admins[email] == pwd:
@@ -117,7 +64,6 @@ if not st.session_state.logged_in:
                 except:
                     pass
                 
-                # Vérifier apprenant
                 user = db.get_user_by_email(email)
                 if user and user['password'] == pwd:
                     if user['status'] == 'bloqué':
@@ -224,16 +170,14 @@ else:
         if not quiz_list:
             st.info("📋 Aucun quiz pour le moment")
         else:
-            # Normalize categories: replace empty/None with 'Sans catégorie'
             categories = sorted(set([(q.get('categorie') or 'Sans catégorie') for q in quiz_list]))
             selected_cat = st.selectbox("Catégorie", categories)
             
-            # Filter using normalized category
             cat_quizzes = [q for q in quiz_list if (q.get('categorie') or 'Sans catégorie') == selected_cat]
             st.write(f"**{len(cat_quizzes)} quiz dans cette catégorie**")
             
             for idx, q in enumerate(cat_quizzes):
-                with st.container(border=True):
+                with st.container():
                     st.markdown(f"**Q{idx+1}/{len(cat_quizzes)}: {q['question']}**")
                     
                     options = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
