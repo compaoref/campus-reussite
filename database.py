@@ -2,18 +2,51 @@ import sqlite3
 import os
 import sys
 from datetime import datetime
+import traceback
 
-# --- CHEMIN ABSOLU GARANTI, OVERRIDABLE VIA ENV ---
+# --- CHEMIN ABSOLU GARANTI, OVERRIDABLE VIA ENV + FALLBACK SI NON ECRITABLE ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+default_path = os.path.join(SCRIPT_DIR, "campus.db")
+env_path = os.environ.get("CAMPUS_DB_PATH", "").strip()
 
-# Allow override via environment variable (useful for deployment / sharing a DB)
-DB_PATH = os.environ.get("CAMPUS_DB_PATH", os.path.join(SCRIPT_DIR, "campus.db"))
+# prefer env if set, otherwise default
+candidate = env_path or default_path
 
-print(f"[DATABASE] Chemin de la DB: {DB_PATH}", file=sys.stderr)
+def is_writable_path(path):
+    """
+    Retourne True si on peut créer un fichier dans le dossier contenant `path`.
+    Utilisé pour détecter les volumes montés en read-only.
+    """
+    try:
+        d = os.path.dirname(path) or "."
+        if not os.path.exists(d):
+            # try to create dir? avoid creating arbitrary dirs; consider it not writable
+            return False
+        testfile = os.path.join(d, f".write_test_{os.getpid()}")
+        with open(testfile, "w") as f:
+            f.write("x")
+        os.remove(testfile)
+        return True
+    except Exception:
+        return False
+
+if not is_writable_path(candidate):
+    fallback = "/tmp/campus.db"
+    print(f"[DATABASE] WARNING: {candidate} not writable, falling back to {fallback}", file=sys.stderr)
+    DB_PATH = fallback
+else:
+    DB_PATH = candidate
+
+print(f"[DATABASE] Chemin final de la DB: {DB_PATH}", file=sys.stderr)
 
 class Database:
     def __init__(self):
-        self.init_db()
+        # Initialize DB (create tables) on instance creation
+        try:
+            self.init_db()
+        except Exception as e:
+            print(f"[DATABASE ERROR] init_db failed: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
     
     def get_db_path(self):
         # utile pour debugging dans l'app
@@ -21,13 +54,13 @@ class Database:
 
     def get_connection(self):
         """Connexion à la DB"""
-        # Note: if you later use threads/WSGI, consider check_same_thread=False or a proper DB server
+        # NOTE: For threaded servers consider check_same_thread=False or use a server DB.
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
     
     def init_db(self):
-        """Initialiser la DB"""
+        """Initialiser la DB (crée les tables si elles n'existent pas)"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -93,9 +126,10 @@ class Database:
             
             conn.commit()
             conn.close()
-            print(f"[DATABASE] Initialized: {DB_PATH}", file=sys.stderr)
+            print(f"[DATABASE] Initialized (or already existed): {DB_PATH}", file=sys.stderr)
         except Exception as e:
-            print(f"[DATABASE ERROR] {e}", file=sys.stderr)
+            print(f"[DATABASE ERROR] init_db: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
     
     # --- UTILISATEURS ---
     def add_user(self, nom, prenom, email, username, password):
@@ -112,6 +146,7 @@ class Database:
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] add_user: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def get_user_by_email(self, email):
@@ -136,6 +171,7 @@ class Database:
             return None
         except Exception as e:
             print(f"[DATABASE ERROR] get_user_by_email: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return None
     
     def get_all_users(self):
@@ -162,6 +198,7 @@ class Database:
             return users
         except Exception as e:
             print(f"[DATABASE ERROR] get_all_users: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return []
     
     def update_user_status(self, user_id, status):
@@ -171,9 +208,11 @@ class Database:
             cursor.execute('UPDATE utilisateurs SET status = ? WHERE id = ?', (status, user_id))
             conn.commit()
             conn.close()
+            print(f"[DATABASE] update_user_status: {user_id} -> {status}", file=sys.stderr)
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] update_user_status: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def delete_user(self, user_id):
@@ -183,9 +222,11 @@ class Database:
             cursor.execute('DELETE FROM utilisateurs WHERE id = ?', (user_id,))
             conn.commit()
             conn.close()
+            print(f"[DATABASE] delete_user: {user_id}", file=sys.stderr)
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] delete_user: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     # --- QUIZ ---
@@ -203,6 +244,7 @@ class Database:
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] add_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def get_all_quiz(self):
@@ -230,6 +272,7 @@ class Database:
             return quiz
         except Exception as e:
             print(f"[DATABASE ERROR] get_all_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return []
     
     def get_quiz_count(self):
@@ -242,6 +285,7 @@ class Database:
             return count
         except Exception as e:
             print(f"[DATABASE ERROR] get_quiz_count: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return 0
     
     # --- QUIZ PENDING ---
@@ -255,9 +299,11 @@ class Database:
             ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file))
             conn.commit()
             conn.close()
+            print(f"[DATABASE] Pending quiz added (source={source_file}): {question[:50]}...", file=sys.stderr)
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] add_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def get_pending_quiz(self):
@@ -286,6 +332,7 @@ class Database:
             return quiz
         except Exception as e:
             print(f"[DATABASE ERROR] get_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return []
     
     def approve_pending_quiz(self, pending_id):
@@ -310,6 +357,7 @@ class Database:
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] approve_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def reject_pending_quiz(self, pending_id):
@@ -323,6 +371,7 @@ class Database:
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] reject_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def update_pending_quiz(self, pending_id, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
@@ -336,9 +385,11 @@ class Database:
             ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, pending_id))
             conn.commit()
             conn.close()
+            print(f"[DATABASE] Pending quiz updated: {pending_id}", file=sys.stderr)
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] update_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     # --- FEEDBACK ---
@@ -356,6 +407,7 @@ class Database:
             return True
         except Exception as e:
             print(f"[DATABASE ERROR] add_feedback: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return False
     
     def get_all_feedback(self):
@@ -380,6 +432,7 @@ class Database:
             return feedback
         except Exception as e:
             print(f"[DATABASE ERROR] get_all_feedback: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return []
 
 # --- INSTANCE GLOBALE ---
