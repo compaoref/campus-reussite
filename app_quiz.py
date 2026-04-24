@@ -24,6 +24,14 @@ if "page" not in st.session_state:
 def is_valid_email(email):
     return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
 
+# --- DEBUG: afficher chemin DB et counts ( temporaire ) ---
+try:
+    # affiche dans la barre latérale pour ne pas polluer l'UI principale
+    st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
+    st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
+except Exception as e:
+    st.sidebar.error(f"DEBUG ERREUR: {e}")
+
 # --- PAGE AUTHENTICATION ---
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -164,10 +172,12 @@ else:
         if not quiz_list:
             st.info("📋 Aucun quiz pour le moment")
         else:
-            categories = sorted(set([q['categorie'] for q in quiz_list]))
+            # Normalize categories: replace empty/None with 'Sans catégorie'
+            categories = sorted(set([(q.get('categorie') or 'Sans catégorie') for q in quiz_list]))
             selected_cat = st.selectbox("Catégorie", categories)
             
-            cat_quizzes = [q for q in quiz_list if q['categorie'] == selected_cat]
+            # Filter using normalized category
+            cat_quizzes = [q for q in quiz_list if (q.get('categorie') or 'Sans catégorie') == selected_cat]
             st.write(f"**{len(cat_quizzes)} quiz dans cette catégorie**")
             
             for idx, q in enumerate(cat_quizzes):
