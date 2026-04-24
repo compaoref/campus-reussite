@@ -1,93 +1,97 @@
 import sqlite3
 import os
+import sys
 from datetime import datetime
-import json
 
-DB_PATH = os.path.join(os.getcwd(), "campus.db")
+# --- CHEMIN ABSOLU GARANTI ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
+
+print(f"[DATABASE] Chemin de la DB: {DB_PATH}", file=sys.stderr)
 
 class Database:
-    """Gestionnaire SQLite pour Campus Réussite"""
-    
     def __init__(self):
         self.init_db()
     
     def get_connection(self):
-        """Obtenir connexion à la DB"""
-        return sqlite3.connect(DB_PATH)
+        """Connexion à la DB"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
     
     def init_db(self):
-        """Initialiser la base de données"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Table Utilisateurs
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS utilisateurs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nom TEXT NOT NULL,
-                prenom TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                status TEXT DEFAULT 'actif',
-                date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Table Quiz
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS quiz (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                question TEXT NOT NULL,
-                option_a TEXT NOT NULL,
-                option_b TEXT NOT NULL,
-                option_c TEXT NOT NULL,
-                option_d TEXT NOT NULL,
-                reponses_correctes TEXT NOT NULL,
-                explication TEXT NOT NULL,
-                categorie TEXT NOT NULL,
-                date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'valide'
-            )
-        ''')
-        
-        # Table Quiz en Attente (Import)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS quiz_pending (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                question TEXT NOT NULL,
-                option_a TEXT NOT NULL,
-                option_b TEXT NOT NULL,
-                option_c TEXT NOT NULL,
-                option_d TEXT NOT NULL,
-                reponses_correctes TEXT NOT NULL,
-                explication TEXT NOT NULL,
-                categorie TEXT NOT NULL,
-                source_file TEXT,
-                date_import TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'en_attente'
-            )
-        ''')
-        
-        # Table Feedback
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS feedback (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL,
-                titre TEXT NOT NULL,
-                message TEXT NOT NULL,
-                type TEXT NOT NULL,
-                date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'nouveau'
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+        """Initialiser la DB"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Utilisateurs
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS utilisateurs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nom TEXT NOT NULL,
+                    prenom TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    status TEXT DEFAULT 'actif',
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Quiz
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS quiz (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT NOT NULL,
+                    option_a TEXT NOT NULL,
+                    option_b TEXT NOT NULL,
+                    option_c TEXT NOT NULL,
+                    option_d TEXT NOT NULL,
+                    reponses_correctes TEXT NOT NULL,
+                    explication TEXT NOT NULL,
+                    categorie TEXT NOT NULL,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Quiz Pending
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS quiz_pending (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT NOT NULL,
+                    option_a TEXT NOT NULL,
+                    option_b TEXT NOT NULL,
+                    option_c TEXT NOT NULL,
+                    option_d TEXT NOT NULL,
+                    reponses_correctes TEXT NOT NULL,
+                    explication TEXT NOT NULL,
+                    categorie TEXT NOT NULL,
+                    source_file TEXT,
+                    date_import TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Feedback
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    titre TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Initialized: {DB_PATH}", file=sys.stderr)
+        except Exception as e:
+            print(f"[DATABASE ERROR] {e}", file=sys.stderr)
     
     # --- UTILISATEURS ---
     def add_user(self, nom, prenom, email, username, password):
-        """Ajouter un utilisateur"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -97,247 +101,279 @@ class Database:
             ''', (nom, prenom, email, username, password, datetime.now().isoformat()))
             conn.commit()
             conn.close()
+            print(f"[DATABASE] User added: {email}", file=sys.stderr)
             return True
-        except sqlite3.IntegrityError:
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_user: {e}", file=sys.stderr)
             return False
     
     def get_user_by_email(self, email):
-        """Obtenir un utilisateur par email"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM utilisateurs WHERE email = ?', (email,))
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result:
-            return {
-                'id': result[0],
-                'nom': result[1],
-                'prenom': result[2],
-                'email': result[3],
-                'username': result[4],
-                'password': result[5],
-                'status': result[6],
-                'date_creation': result[7]
-            }
-        return None
-    
-    def get_all_users(self):
-        """Obtenir tous les utilisateurs"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM utilisateurs ORDER BY date_creation DESC')
-        results = cursor.fetchall()
-        conn.close()
-        
-        users = []
-        for row in results:
-            users.append({
-                'id': row[0],
-                'nom': row[1],
-                'prenom': row[2],
-                'email': row[3],
-                'username': row[4],
-                'password': row[5],
-                'status': row[6],
-                'date_creation': row[7]
-            })
-        return users
-    
-    def update_user_status(self, user_id, status):
-        """Mettre à jour le statut d'un utilisateur"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE utilisateurs SET status = ? WHERE id = ?', (status, user_id))
-        conn.commit()
-        conn.close()
-    
-    def delete_user(self, user_id):
-        """Supprimer un utilisateur"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM utilisateurs WHERE id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-    
-    # --- QUIZ ---
-    def add_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
-        """Ajouter un quiz"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'valide')
-            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie))
+            cursor.execute('SELECT * FROM utilisateurs WHERE email = ?', (email,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                return {
+                    'id': row['id'],
+                    'nom': row['nom'],
+                    'prenom': row['prenom'],
+                    'email': row['email'],
+                    'username': row['username'],
+                    'password': row['password'],
+                    'status': row['status'],
+                    'date_creation': row['date_creation']
+                }
+            return None
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_user_by_email: {e}", file=sys.stderr)
+            return None
+    
+    def get_all_users(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM utilisateurs ORDER BY date_creation DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            users = []
+            for row in rows:
+                users.append({
+                    'id': row['id'],
+                    'nom': row['nom'],
+                    'prenom': row['prenom'],
+                    'email': row['email'],
+                    'username': row['username'],
+                    'password': row['password'],
+                    'status': row['status'],
+                    'date_creation': row['date_creation']
+                })
+            print(f"[DATABASE] Loaded {len(users)} users", file=sys.stderr)
+            return users
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_users: {e}", file=sys.stderr)
+            return []
+    
+    def update_user_status(self, user_id, status):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE utilisateurs SET status = ? WHERE id = ?', (status, user_id))
             conn.commit()
             conn.close()
             return True
         except Exception as e:
+            print(f"[DATABASE ERROR] update_user_status: {e}", file=sys.stderr)
             return False
     
-    def get_all_quiz(self):
-        """Obtenir tous les quiz valides"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM quiz WHERE status = "valide" ORDER BY categorie, date_creation')
-        results = cursor.fetchall()
-        conn.close()
-        
-        quiz = []
-        for row in results:
-            quiz.append({
-                'id': row[0],
-                'question': row[1],
-                'option_a': row[2],
-                'option_b': row[3],
-                'option_c': row[4],
-                'option_d': row[5],
-                'reponses_correctes': row[6],
-                'explication': row[7],
-                'categorie': row[8],
-                'date_creation': row[9],
-                'status': row[10]
-            })
-        return quiz
+    def delete_user(self, user_id):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM utilisateurs WHERE id = ?', (user_id,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] delete_user: {e}", file=sys.stderr)
+            return False
     
-    def get_quiz_count(self):
-        """Nombre total de quiz"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM quiz WHERE status = "valide"')
-        count = cursor.fetchone()[0]
-        conn.close()
-        return count
-    
-    # --- QUIZ PENDING (IMPORT) ---
-    def add_pending_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file):
-        """Ajouter un quiz en attente"""
+    # --- QUIZ ---
+    def add_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO quiz_pending (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_attente')
+                INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz added: {question[:50]}...", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_quiz: {e}", file=sys.stderr)
+            return False
+    
+    def get_all_quiz(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM quiz ORDER BY categorie, date_creation')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            quiz = []
+            for row in rows:
+                quiz.append({
+                    'id': row['id'],
+                    'question': row['question'],
+                    'option_a': row['option_a'],
+                    'option_b': row['option_b'],
+                    'option_c': row['option_c'],
+                    'option_d': row['option_d'],
+                    'reponses_correctes': row['reponses_correctes'],
+                    'explication': row['explication'],
+                    'categorie': row['categorie']
+                })
+            print(f"[DATABASE] Loaded {len(quiz)} quiz", file=sys.stderr)
+            return quiz
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_quiz: {e}", file=sys.stderr)
+            return []
+    
+    def get_quiz_count(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM quiz')
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_quiz_count: {e}", file=sys.stderr)
+            return 0
+    
+    # --- QUIZ PENDING ---
+    def add_pending_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO quiz_pending (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file))
             conn.commit()
             conn.close()
             return True
         except Exception as e:
+            print(f"[DATABASE ERROR] add_pending_quiz: {e}", file=sys.stderr)
             return False
     
     def get_pending_quiz(self):
-        """Obtenir tous les quiz en attente"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM quiz_pending WHERE status = "en_attente" ORDER BY date_import DESC')
-        results = cursor.fetchall()
-        conn.close()
-        
-        quiz = []
-        for row in results:
-            quiz.append({
-                'id': row[0],
-                'question': row[1],
-                'option_a': row[2],
-                'option_b': row[3],
-                'option_c': row[4],
-                'option_d': row[5],
-                'reponses_correctes': row[6],
-                'explication': row[7],
-                'categorie': row[8],
-                'source_file': row[9],
-                'date_import': row[10],
-                'status': row[11]
-            })
-        return quiz
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM quiz_pending ORDER BY date_import DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            quiz = []
+            for row in rows:
+                quiz.append({
+                    'id': row['id'],
+                    'question': row['question'],
+                    'option_a': row['option_a'],
+                    'option_b': row['option_b'],
+                    'option_c': row['option_c'],
+                    'option_d': row['option_d'],
+                    'reponses_correctes': row['reponses_correctes'],
+                    'explication': row['explication'],
+                    'categorie': row['categorie'],
+                    'source_file': row['source_file']
+                })
+            print(f"[DATABASE] Loaded {len(quiz)} pending quiz", file=sys.stderr)
+            return quiz
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_pending_quiz: {e}", file=sys.stderr)
+            return []
     
     def approve_pending_quiz(self, pending_id):
-        """Approuver un quiz en attente"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Récupérer les données
-        cursor.execute('SELECT * FROM quiz_pending WHERE id = ?', (pending_id,))
-        row = cursor.fetchone()
-        
-        if row:
-            # Ajouter au table principale
-            cursor.execute('''
-                INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'valide')
-            ''', (row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]))
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             
-            # Supprimer de pending
-            cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
-        
-        conn.commit()
-        conn.close()
+            cursor.execute('SELECT * FROM quiz_pending WHERE id = ?', (pending_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                cursor.execute('''
+                    INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (row['question'], row['option_a'], row['option_b'], row['option_c'], row['option_d'], row['reponses_correctes'], row['explication'], row['categorie']))
+                
+                cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
+            
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz approved: {pending_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] approve_pending_quiz: {e}", file=sys.stderr)
+            return False
     
     def reject_pending_quiz(self, pending_id):
-        """Rejeter un quiz en attente"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz rejected: {pending_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] reject_pending_quiz: {e}", file=sys.stderr)
+            return False
     
     def update_pending_quiz(self, pending_id, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
-        """Modifier un quiz en attente"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE quiz_pending 
-            SET question = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, reponses_correctes = ?, explication = ?, categorie = ?
-            WHERE id = ?
-        ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, pending_id))
-        conn.commit()
-        conn.close()
-    
-    # --- FEEDBACK ---
-    def add_feedback(self, email, titre, message, type_feedback):
-        """Ajouter un feedback"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO feedback (email, titre, message, type, status)
-                VALUES (?, ?, ?, ?, 'nouveau')
-            ''', (email, titre, message, type_feedback))
+                UPDATE quiz_pending 
+                SET question = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, reponses_correctes = ?, explication = ?, categorie = ?
+                WHERE id = ?
+            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, pending_id))
             conn.commit()
             conn.close()
             return True
         except Exception as e:
+            print(f"[DATABASE ERROR] update_pending_quiz: {e}", file=sys.stderr)
+            return False
+    
+    # --- FEEDBACK ---
+    def add_feedback(self, email, titre, message, type_feedback):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO feedback (email, titre, message, type, date_creation)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (email, titre, message, type_feedback, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Feedback added: {email}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_feedback: {e}", file=sys.stderr)
             return False
     
     def get_all_feedback(self):
-        """Obtenir tous les feedbacks"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM feedback ORDER BY date_creation DESC')
-        results = cursor.fetchall()
-        conn.close()
-        
-        feedback = []
-        for row in results:
-            feedback.append({
-                'id': row[0],
-                'email': row[1],
-                'titre': row[2],
-                'message': row[3],
-                'type': row[4],
-                'date_creation': row[5],
-                'status': row[6]
-            })
-        return feedback
-    
-    def mark_feedback_as_read(self, feedback_id):
-        """Marquer un feedback comme lu"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE feedback SET status = "lu" WHERE id = ?', (feedback_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM feedback ORDER BY date_creation DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            feedback = []
+            for row in rows:
+                feedback.append({
+                    'id': row['id'],
+                    'email': row['email'],
+                    'titre': row['titre'],
+                    'message': row['message'],
+                    'type': row['type'],
+                    'date_creation': row['date_creation']
+                })
+            print(f"[DATABASE] Loaded {len(feedback)} feedback", file=sys.stderr)
+            return feedback
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_feedback: {e}", file=sys.stderr)
+            return []
 
-# Instance globale
+# --- INSTANCE GLOBALE ---
 db = Database()
