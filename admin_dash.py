@@ -139,7 +139,7 @@ else:
         st.write(f"**{len(pending)} quiz en attente**")
         
         if pending:
-            for q in pending:
+            for idx, q in enumerate(pending):
                 with st.container(border=True):
                     col1, col2 = st.columns([4, 1])
                     
@@ -156,16 +156,16 @@ else:
                             st.text(f"Explication: {q['explication']}")
                         
                         with st.expander("✏️ Modifier"):
-                            question = st.text_input("Question", value=q['question'], key=f"q_{q['id']}")
-                            opt_a = st.text_input("A", value=q['option_a'], key=f"a_{q['id']}")
-                            opt_b = st.text_input("B", value=q['option_b'], key=f"b_{q['id']}")
-                            opt_c = st.text_input("C", value=q['option_c'], key=f"c_{q['id']}")
-                            opt_d = st.text_input("D", value=q['option_d'], key=f"d_{q['id']}")
-                            correct = st.text_input("Réponses", value=q['reponses_correctes'], key=f"r_{q['id']}")
-                            expl = st.text_area("Explication", value=q['explication'], key=f"e_{q['id']}")
-                            cat = st.text_input("Catégorie", value=q['categorie'], key=f"c_{q['id']}")
+                            question = st.text_input("Question", value=q['question'], key=f"q_{idx}_{q['id']}")
+                            opt_a = st.text_input("A", value=q['option_a'], key=f"a_{idx}_{q['id']}")
+                            opt_b = st.text_input("B", value=q['option_b'], key=f"b_{idx}_{q['id']}")
+                            opt_c = st.text_input("C", value=q['option_c'], key=f"c_{idx}_{q['id']}")
+                            opt_d = st.text_input("D", value=q['option_d'], key=f"d_{idx}_{q['id']}")
+                            correct = st.text_input("Réponses", value=q['reponses_correctes'], key=f"r_{idx}_{q['id']}")
+                            expl = st.text_area("Explication", value=q['explication'], key=f"e_{idx}_{q['id']}")
+                            cat = st.text_input("Catégorie", value=q['categorie'], key=f"c_{idx}_{q['id']}")
                             
-                            if st.button("Sauvegarder", key=f"save_{q['id']}"):
+                            if st.button("Sauvegarder", key=f"save_{idx}_{q['id']}"):
                                 db.update_pending_quiz(q['id'], question, opt_a, opt_b, opt_c, opt_d, correct, expl, cat)
                                 st.success("✅ Modifié")
                                 st.rerun()
@@ -173,12 +173,12 @@ else:
                     with col2:
                         col_a, col_r = st.columns(2)
                         with col_a:
-                            if st.button("✅", key=f"accept_{q['id']}", help="Accepter"):
+                            if st.button("✅", key=f"accept_{idx}_{q['id']}", help="Accepter"):
                                 db.approve_pending_quiz(q['id'])
                                 st.success("✅ Accepté")
                                 st.rerun()
                         with col_r:
-                            if st.button("❌", key=f"reject_{q['id']}", help="Rejeter"):
+                            if st.button("❌", key=f"reject_{idx}_{q['id']}", help="Rejeter"):
                                 db.reject_pending_quiz(q['id'])
                                 st.info("❌ Rejeté")
                                 st.rerun()
