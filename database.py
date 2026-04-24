@@ -20,7 +20,6 @@ def is_writable_path(path):
     try:
         d = os.path.dirname(path) or "."
         if not os.path.exists(d):
-            # try to create dir? avoid creating arbitrary dirs; consider it not writable
             return False
         testfile = os.path.join(d, f".write_test_{os.getpid()}")
         with open(testfile, "w") as f:
@@ -41,7 +40,6 @@ print(f"[DATABASE] Chemin final de la DB: {DB_PATH}", file=sys.stderr)
 
 class Database:
     def __init__(self):
-        # Initialize DB (create tables) on instance creation
         try:
             self.init_db()
         except Exception as e:
@@ -49,23 +47,18 @@ class Database:
             print(traceback.format_exc(), file=sys.stderr)
     
     def get_db_path(self):
-        # utile pour debugging dans l'app
         return DB_PATH
 
     def get_connection(self):
-        """Connexion à la DB"""
-        # NOTE: For threaded servers consider check_same_thread=False or use a server DB.
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
     
     def init_db(self):
-        """Initialiser la DB (crée les tables si elles n'existent pas)"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Utilisateurs
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS utilisateurs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +72,6 @@ class Database:
                 )
             ''')
             
-            # Quiz
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS quiz (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +87,6 @@ class Database:
                 )
             ''')
             
-            # Quiz Pending
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS quiz_pending (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +103,6 @@ class Database:
                 )
             ''')
             
-            # Feedback
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS feedback (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,7 +146,6 @@ class Database:
             cursor.execute('SELECT * FROM utilisateurs WHERE email = ?', (email,))
             row = cursor.fetchone()
             conn.close()
-            
             if row:
                 return {
                     'id': row['id'],
@@ -181,7 +170,6 @@ class Database:
             cursor.execute('SELECT * FROM utilisateurs ORDER BY date_creation DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             users = []
             for row in rows:
                 users.append({
@@ -254,7 +242,6 @@ class Database:
             cursor.execute('SELECT * FROM quiz ORDER BY categorie, date_creation')
             rows = cursor.fetchall()
             conn.close()
-            
             quiz = []
             for row in rows:
                 quiz.append({
@@ -313,7 +300,6 @@ class Database:
             cursor.execute('SELECT * FROM quiz_pending ORDER BY date_import DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             quiz = []
             for row in rows:
                 quiz.append({
@@ -339,18 +325,14 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
             cursor.execute('SELECT * FROM quiz_pending WHERE id = ?', (pending_id,))
             row = cursor.fetchone()
-            
             if row:
                 cursor.execute('''
                     INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (row['question'], row['option_a'], row['option_b'], row['option_c'], row['option_d'], row['reponses_correctes'], row['explication'], row['categorie']))
-                
                 cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
-            
             conn.commit()
             conn.close()
             print(f"[DATABASE] Quiz approved: {pending_id}", file=sys.stderr)
@@ -417,7 +399,6 @@ class Database:
             cursor.execute('SELECT * FROM feedback ORDER BY date_creation DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             feedback = []
             for row in rows:
                 feedback.append({
