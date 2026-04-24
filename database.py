@@ -3,9 +3,11 @@ import os
 import sys
 from datetime import datetime
 
-# --- CHEMIN ABSOLU GARANTI ---
+# --- CHEMIN ABSOLU GARANTI, OVERRIDABLE VIA ENV ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
+
+# Allow override via environment variable (useful for deployment / sharing a DB)
+DB_PATH = os.environ.get("CAMPUS_DB_PATH", os.path.join(SCRIPT_DIR, "campus.db"))
 
 print(f"[DATABASE] Chemin de la DB: {DB_PATH}", file=sys.stderr)
 
@@ -13,8 +15,13 @@ class Database:
     def __init__(self):
         self.init_db()
     
+    def get_db_path(self):
+        # utile pour debugging dans l'app
+        return DB_PATH
+
     def get_connection(self):
         """Connexion à la DB"""
+        # Note: if you later use threads/WSGI, consider check_same_thread=False or a proper DB server
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
