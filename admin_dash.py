@@ -156,14 +156,15 @@ else:
                             st.text(f"Explication: {q['explication']}")
                         
                         with st.expander("✏️ Modifier"):
+                            # Keys made explicit and unique to avoid collisions
                             question = st.text_input("Question", value=q['question'], key=f"q_{idx}_{q['id']}")
-                            opt_a = st.text_input("A", value=q['option_a'], key=f"a_{idx}_{q['id']}")
-                            opt_b = st.text_input("B", value=q['option_b'], key=f"b_{idx}_{q['id']}")
-                            opt_c = st.text_input("C", value=q['option_c'], key=f"c_{idx}_{q['id']}")
-                            opt_d = st.text_input("D", value=q['option_d'], key=f"d_{idx}_{q['id']}")
+                            opt_a = st.text_input("A", value=q['option_a'], key=f"opt_a_{idx}_{q['id']}")
+                            opt_b = st.text_input("B", value=q['option_b'], key=f"opt_b_{idx}_{q['id']}")
+                            opt_c = st.text_input("C", value=q['option_c'], key=f"opt_c_{idx}_{q['id']}")
+                            opt_d = st.text_input("D", value=q['option_d'], key=f"opt_d_{idx}_{q['id']}")
                             correct = st.text_input("Réponses", value=q['reponses_correctes'], key=f"r_{idx}_{q['id']}")
                             expl = st.text_area("Explication", value=q['explication'], key=f"e_{idx}_{q['id']}")
-                            cat = st.text_input("Catégorie", value=q['categorie'], key=f"c_{idx}_{q['id']}")
+                            cat = st.text_input("Catégorie", value=q['categorie'], key=f"cat_{idx}_{q['id']}")
                             
                             if st.button("Sauvegarder", key=f"save_{idx}_{q['id']}"):
                                 db.update_pending_quiz(q['id'], question, opt_a, opt_b, opt_c, opt_d, correct, expl, cat)
