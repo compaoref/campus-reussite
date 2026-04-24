@@ -1,253 +1,420 @@
-import streamlit as st
-import pandas as pd
-from database import db
+import sqlite3
+import os
+import sys
+from datetime import datetime
+import traceback
 
-st.set_page_config(page_title="Campus Admin", layout="wide")
+# --- CHEMIN ABSOLU GARANTI, OVERRIDABLE VIA ENV + FALLBACK SI NON ECRITABLE ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+default_path = os.path.join(SCRIPT_DIR, "campus.db")
+env_path = os.environ.get("CAMPUS_DB_PATH", "").strip()
 
-st.markdown("""
-<style>
-    .header { background: linear-gradient(90deg, #1e293b, #0f172a); color: white; padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; }
-    .card { background: white; padding: 1.2rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-    .stat { background: linear-gradient(90deg, #667eea, #764ba2); color: white; padding: 1rem; border-radius: 8px; text-align: center; }
-</style>
-""", unsafe_allow_html=True)
+# prefer env if set, otherwise default
+candidate = env_path or default_path
 
-# --- AUTH ---
-if "admin_auth" not in st.session_state:
-    st.session_state.admin_auth = False
+def is_writable_path(path):
+    """
+    Retourne True si on peut créer un fichier dans le dossier contenant `path`.
+    Utilisé pour détecter les volumes montés en read-only.
+    """
+    try:
+        d = os.path.dirname(path) or "."
+        if not os.path.exists(d):
+            return False
+        testfile = os.path.join(d, f".write_test_{os.getpid()}")
+        with open(testfile, "w") as f:
+            f.write("x")
+        os.remove(testfile)
+        return True
+    except Exception:
+        return False
 
-if not st.session_state.admin_auth:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("## 🔐 Administration")
-        email = st.text_input("Email")
-        pwd = st.text_input("Mot de passe", type="password")
-        
-        if st.button("Se Connecter", use_container_width=True, type="primary"):
-            try:
-                admins = st.secrets.get("admins", {})
-                if email in admins and admins[email] == pwd:
-                    st.session_state.admin_auth = True
-                    st.session_state.admin_email = email
-                    st.rerun()
-                else:
-                    st.error("❌ Identifiants incorrects")
-            except:
-                st.error("⚠️ Erreur")
+if not is_writable_path(candidate):
+    fallback = "/tmp/campus.db"
+    print(f"[DATABASE] WARNING: {candidate} not writable, falling back to {fallback}", file=sys.stderr)
+    DB_PATH = fallback
 else:
-    # --- DASHBOARD ---
-    st.markdown(f"""
-    <div class="header">
-        <h2 style="margin:0">🎓 Campus Réussite - Admin</h2>
-        <p style="margin:0.5rem 0 0; opacity:0.9">👤 {st.session_state.admin_email}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    DB_PATH = candidate
+
+print(f"[DATABASE] Chemin final de la DB: {DB_PATH}", file=sys.stderr)
+
+class Database:
+    def __init__(self):
+        try:
+            self.init_db()
+        except Exception as e:
+            print(f"[DATABASE ERROR] init_db failed: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
     
-    if st.button("🚪 Déconnexion", key="logout"):
-        st.session_state.admin_auth = False
-        st.rerun()
+    def get_db_path(self):
+        return DB_PATH
+
+    def get_connection(self):
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
     
-    st.divider()
-    
-    # --- TABS ---
-    if "admin_tab" not in st.session_state:
-        st.session_state.admin_tab = "dashboard"
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        if st.button("📊 Dashboard", use_container_width=True):
-            st.session_state.admin_tab = "dashboard"
-            st.rerun()
-    with col2:
-        if st.button("📤 Importer", use_container_width=True):
-            st.session_state.admin_tab = "import"
-            st.rerun()
-    with col3:
-        if st.button("👥 Apprenants", use_container_width=True):
-            st.session_state.admin_tab = "users"
-            st.rerun()
-    with col4:
-        if st.button("💬 Feedback", use_container_width=True):
-            st.session_state.admin_tab = "feedback"
-            st.rerun()
-    
-    st.divider()
-    
-    # === DASHBOARD ===
-    if st.session_state.admin_tab == "dashboard":
-        st.markdown("### 📊 Statistiques")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown(f'<div class="stat"><div style="font-size:2rem; font-weight:bold">{len(db.get_all_users())}</div><div>Apprenants</div></div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown(f'<div class="stat"><div style="font-size:2rem; font-weight:bold">{db.get_quiz_count()}</div><div>Quiz Publiés</div></div>', unsafe_allow_html=True)
-        with col3:
-            st.markdown(f'<div class="stat"><div style="font-size:2rem; font-weight:bold">{len(db.get_pending_quiz())}</div><div>En Révision</div></div>', unsafe_allow_html=True)
-        with col4:
-            st.markdown(f'<div class="stat"><div style="font-size:2rem; font-weight:bold">{len(db.get_all_feedback())}</div><div>Feedbacks</div></div>', unsafe_allow_html=True)
-        
-        st.divider()
-        st.markdown("### 📋 Quiz Publiés")
-        
-        quiz_list = db.get_all_quiz()
-        st.write(f"**Total: {len(quiz_list)} quiz**")
-        
-        if quiz_list:
-            df = pd.DataFrame(quiz_list)
-            df = df[['question', 'reponses_correctes', 'categorie']]
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        else:
-            st.info("Aucun quiz")
-    
-    # === IMPORT ===
-    elif st.session_state.admin_tab == "import":
-        st.markdown("### 📤 Importer des Quiz")
-        
-        uploaded_file = st.file_uploader("Fichier CSV", type=["csv"])
-        
-        if uploaded_file:
-            try:
-                df = pd.read_csv(uploaded_file, sep=";", encoding="utf-8")
-                st.success(f"✅ {len(df)} lignes chargées")
-                st.dataframe(df, use_container_width=True, height=300)
-                
-                if st.button("📥 Ajouter à la Révision", use_container_width=True, type="primary"):
-                    count = 0
-                    for _, row in df.iterrows():
-                        if db.add_pending_quiz(
-                            row['question'],
-                            row['a'],
-                            row['b'],
-                            row['c'],
-                            row['d'],
-                            row['reponses_correctes'],
-                            row['explication'],
-                            row['categorie'],
-                            uploaded_file.name
-                        ):
-                            count += 1
-                    st.success(f"✅ {count} quiz ajoutés à la révision")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erreur: {e}")
-        
-        st.divider()
-        st.markdown("### ⏳ Quiz en Révision")
-        
-        pending = db.get_pending_quiz()
-        st.write(f"**{len(pending)} quiz en attente**")
-        
-        if pending:
-            for idx, q in enumerate(pending):
-                with st.container(border=True):
-                    col1, col2 = st.columns([4, 1])
-                    
-                    with col1:
-                        st.markdown(f"**Q{q['id']}: {q['question']}**")
-                        st.markdown(f"Catégorie: {q['categorie']}")
-                        
-                        with st.expander("Détails"):
-                            st.text(f"A) {q['option_a']}")
-                            st.text(f"B) {q['option_b']}")
-                            st.text(f"C) {q['option_c']}")
-                            st.text(f"D) {q['option_d']}")
-                            st.text(f"Réponses: {q['reponses_correctes']}")
-                            st.text(f"Explication: {q['explication']}")
-                        
-                        with st.expander("✏️ Modifier"):
-                            # Keys made explicit and unique to avoid collisions
-                            question = st.text_input("Question", value=q['question'], key=f"q_{idx}_{q['id']}")
-                            opt_a = st.text_input("A", value=q['option_a'], key=f"opt_a_{idx}_{q['id']}")
-                            opt_b = st.text_input("B", value=q['option_b'], key=f"opt_b_{idx}_{q['id']}")
-                            opt_c = st.text_input("C", value=q['option_c'], key=f"opt_c_{idx}_{q['id']}")
-                            opt_d = st.text_input("D", value=q['option_d'], key=f"opt_d_{idx}_{q['id']}")
-                            correct = st.text_input("Réponses", value=q['reponses_correctes'], key=f"r_{idx}_{q['id']}")
-                            expl = st.text_area("Explication", value=q['explication'], key=f"e_{idx}_{q['id']}")
-                            cat = st.text_input("Catégorie", value=q['categorie'], key=f"cat_{idx}_{q['id']}")
-                            
-                            if st.button("Sauvegarder", key=f"save_{idx}_{q['id']}"):
-                                db.update_pending_quiz(q['id'], question, opt_a, opt_b, opt_c, opt_d, correct, expl, cat)
-                                st.success("✅ Modifié")
-                                st.rerun()
-                    
-                    with col2:
-                        col_a, col_r = st.columns(2)
-                        with col_a:
-                            if st.button("✅", key=f"accept_{idx}_{q['id']}", help="Accepter"):
-                                db.approve_pending_quiz(q['id'])
-                                st.success("✅ Accepté")
-                                st.rerun()
-                        with col_r:
-                            if st.button("❌", key=f"reject_{idx}_{q['id']}", help="Rejeter"):
-                                db.reject_pending_quiz(q['id'])
-                                st.info("❌ Rejeté")
-                                st.rerun()
-    
-    # === APPRENANTS ===
-    elif st.session_state.admin_tab == "users":
-        st.markdown("### 👥 Gestion des Apprenants")
-        
-        users = db.get_all_users()
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total", len(users))
-        with col2:
-            st.metric("Actifs", len([u for u in users if u['status'] == 'actif']))
-        with col3:
-            st.metric("Bloqués", len([u for u in users if u['status'] == 'bloqué']))
-        
-        st.divider()
-        
-        if users:
-            df = pd.DataFrame(users)
-            df = df[['nom', 'prenom', 'email', 'status']].copy()
-            st.dataframe(df, use_container_width=True, hide_index=True)
+    def init_db(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             
-            st.divider()
-            st.markdown("### Actions")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS utilisateurs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nom TEXT NOT NULL,
+                    prenom TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    status TEXT DEFAULT 'actif',
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
-            user_names = [f"{u['prenom']} {u['nom']}" for u in users]
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS quiz (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT NOT NULL,
+                    option_a TEXT NOT NULL,
+                    option_b TEXT NOT NULL,
+                    option_c TEXT NOT NULL,
+                    option_d TEXT NOT NULL,
+                    reponses_correctes TEXT NOT NULL,
+                    explication TEXT NOT NULL,
+                    categorie TEXT NOT NULL,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
-            col1, col2 = st.columns(2)
-            with col1:
-                selected = st.selectbox("Sélectionner", user_names)
-                if st.button("🚫 Bloquer/Débloquer", use_container_width=True):
-                    for u in users:
-                        if f"{u['prenom']} {u['nom']}" == selected:
-                            new_status = 'actif' if u['status'] == 'bloqué' else 'bloqué'
-                            db.update_user_status(u['id'], new_status)
-                            st.success(f"✅ {new_status}")
-                            st.rerun()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS quiz_pending (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT NOT NULL,
+                    option_a TEXT NOT NULL,
+                    option_b TEXT NOT NULL,
+                    option_c TEXT NOT NULL,
+                    option_d TEXT NOT NULL,
+                    reponses_correctes TEXT NOT NULL,
+                    explication TEXT NOT NULL,
+                    categorie TEXT NOT NULL,
+                    source_file TEXT,
+                    date_import TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
-            with col2:
-                selected2 = st.selectbox("Sélectionner pour supprimer", user_names, key="del")
-                if st.button("🗑️ Supprimer", use_container_width=True):
-                    for u in users:
-                        if f"{u['prenom']} {u['nom']}" == selected2:
-                            db.delete_user(u['id'])
-                            st.success("✅ Supprimé")
-                            st.rerun()
-        else:
-            st.info("Aucun apprenant")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    titre TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Initialized (or already existed): {DB_PATH}", file=sys.stderr)
+        except Exception as e:
+            print(f"[DATABASE ERROR] init_db: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
     
-    # === FEEDBACK ===
-    elif st.session_state.admin_tab == "feedback":
-        st.markdown("### 💬 Feedback des Apprenants")
-        
-        feedback_list = db.get_all_feedback()
-        st.write(f"**{len(feedback_list)} feedbacks**")
-        
-        if feedback_list:
-            for fb in feedback_list:
-                with st.container(border=True):
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown(f"**{fb['titre']}**")
-                        st.markdown(f"De: {fb['email']} | Type: {fb['type']}")
-                        st.markdown(f"Message: {fb['message']}")
-                    with col2:
-                        st.caption(fb['date_creation'])
-        else:
-            st.info("Aucun feedback")
+    # --- UTILISATEURS ---
+    def add_user(self, nom, prenom, email, username, password):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO utilisateurs (nom, prenom, email, username, password, status, date_creation)
+                VALUES (?, ?, ?, ?, ?, 'actif', ?)
+            ''', (nom, prenom, email, username, password, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] User added: {email}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_user: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def get_user_by_email(self, email):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM utilisateurs WHERE email = ?', (email,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return {
+                    'id': row['id'],
+                    'nom': row['nom'],
+                    'prenom': row['prenom'],
+                    'email': row['email'],
+                    'username': row['username'],
+                    'password': row['password'],
+                    'status': row['status'],
+                    'date_creation': row['date_creation']
+                }
+            return None
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_user_by_email: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return None
+    
+    def get_all_users(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM utilisateurs ORDER BY date_creation DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            users = []
+            for row in rows:
+                users.append({
+                    'id': row['id'],
+                    'nom': row['nom'],
+                    'prenom': row['prenom'],
+                    'email': row['email'],
+                    'username': row['username'],
+                    'password': row['password'],
+                    'status': row['status'],
+                    'date_creation': row['date_creation']
+                })
+            print(f"[DATABASE] Loaded {len(users)} users", file=sys.stderr)
+            return users
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_users: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return []
+    
+    def update_user_status(self, user_id, status):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE utilisateurs SET status = ? WHERE id = ?', (status, user_id))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] update_user_status: {user_id} -> {status}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] update_user_status: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def delete_user(self, user_id):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM utilisateurs WHERE id = ?', (user_id,))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] delete_user: {user_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] delete_user: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    # --- QUIZ ---
+    def add_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz added: {question[:50]}...", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def get_all_quiz(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM quiz ORDER BY categorie, date_creation')
+            rows = cursor.fetchall()
+            conn.close()
+            quiz = []
+            for row in rows:
+                quiz.append({
+                    'id': row['id'],
+                    'question': row['question'],
+                    'option_a': row['option_a'],
+                    'option_b': row['option_b'],
+                    'option_c': row['option_c'],
+                    'option_d': row['option_d'],
+                    'reponses_correctes': row['reponses_correctes'],
+                    'explication': row['explication'],
+                    'categorie': row['categorie']
+                })
+            print(f"[DATABASE] Loaded {len(quiz)} quiz", file=sys.stderr)
+            return quiz
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return []
+    
+    def get_quiz_count(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM quiz')
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_quiz_count: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return 0
+    
+    # --- QUIZ PENDING ---
+    def add_pending_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO quiz_pending (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Pending quiz added (source={source_file}): {question[:50]}...", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def get_pending_quiz(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM quiz_pending ORDER BY date_import DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            quiz = []
+            for row in rows:
+                quiz.append({
+                    'id': row['id'],
+                    'question': row['question'],
+                    'option_a': row['option_a'],
+                    'option_b': row['option_b'],
+                    'option_c': row['option_c'],
+                    'option_d': row['option_d'],
+                    'reponses_correctes': row['reponses_correctes'],
+                    'explication': row['explication'],
+                    'categorie': row['categorie'],
+                    'source_file': row['source_file']
+                })
+            print(f"[DATABASE] Loaded {len(quiz)} pending quiz", file=sys.stderr)
+            return quiz
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return []
+    
+    def approve_pending_quiz(self, pending_id):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM quiz_pending WHERE id = ?', (pending_id,))
+            row = cursor.fetchone()
+            if row:
+                cursor.execute('''
+                    INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (row['question'], row['option_a'], row['option_b'], row['option_c'], row['option_d'], row['reponses_correctes'], row['explication'], row['categorie']))
+                cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz approved: {pending_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] approve_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def reject_pending_quiz(self, pending_id):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Quiz rejected: {pending_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] reject_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def update_pending_quiz(self, pending_id, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE quiz_pending 
+                SET question = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, reponses_correctes = ?, explication = ?, categorie = ?
+                WHERE id = ?
+            ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, pending_id))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Pending quiz updated: {pending_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] update_pending_quiz: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    # --- FEEDBACK ---
+    def add_feedback(self, email, titre, message, type_feedback):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO feedback (email, titre, message, type, date_creation)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (email, titre, message, type_feedback, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] Feedback added: {email}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[DATABASE ERROR] add_feedback: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return False
+    
+    def get_all_feedback(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM feedback ORDER BY date_creation DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            feedback = []
+            for row in rows:
+                feedback.append({
+                    'id': row['id'],
+                    'email': row['email'],
+                    'titre': row['titre'],
+                    'message': row['message'],
+                    'type': row['type'],
+                    'date_creation': row['date_creation']
+                })
+            print(f"[DATABASE] Loaded {len(feedback)} feedback", file=sys.stderr)
+            return feedback
+        except Exception as e:
+            print(f"[DATABASE ERROR] get_all_feedback: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return []
+
+# --- INSTANCE GLOBALE ---
+db = Database()
