@@ -1,6 +1,58 @@
 import streamlit as st
 import re
 from database import db
+import os, sqlite3, stat, traceback
+
+# --- DIAGNOSTIC COMPLET DB (très verbeux, temporaire) ---
+DBP = None
+try:
+    DBP = db.get_db_path()
+    st.sidebar.write("=== DIAGNOSTIC DB ===")
+    st.sidebar.write("**Path configured:**", DBP)
+    st.sidebar.write("**exists:**", os.path.exists(DBP))
+    
+    if os.path.exists(DBP):
+        st.sidebar.write("**size (bytes):**", os.path.getsize(DBP))
+        import time
+        mtime = os.path.getmtime(DBP)
+        st.sidebar.write("**last modified (timestamp):**", mtime)
+        st.sidebar.write("**last modified (human):**", time.ctime(mtime))
+        
+        # perms
+        mode = os.stat(DBP).st_mode
+        st.sidebar.write("**perms (octal):**", oct(mode & 0o777))
+    else:
+        st.sidebar.write("❌ Fichier DB n'existe pas!")
+        st.sidebar.write("Creating tables now...")
+        # force init
+        db.init_db()
+        st.sidebar.write("✅ Init called")
+    
+    # Try to list sqlite tables and counts
+    try:
+        conn = sqlite3.connect(DBP)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [r[0] for r in cur.fetchall()]
+        st.sidebar.write("**Tables found:**", tables)
+        
+        for t in tables:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM {t}")
+                cnt = cur.fetchone()[0]
+                st.sidebar.write(f"  └─ `{t}`: **{cnt}** rows")
+            except Exception as e:
+                st.sidebar.write(f"  └─ `{t}` ERROR: {e}")
+        
+        conn.close()
+    except Exception as e:
+        st.sidebar.error(f"SQLite connection error: {e}")
+        st.sidebar.write(traceback.format_exc())
+        
+except Exception as e:
+    st.sidebar.error(f"Diagnostic error: {e}")
+    st.sidebar.write(traceback.format_exc())
+# --- FIN DIAGNOSTIC ---
 
 st.set_page_config(page_title="Campus Réussite", layout="wide")
 
