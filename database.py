@@ -3,10 +3,16 @@ import os
 import traceback
 from datetime import datetime
 
-# Allow overriding DB path via env var so multiple deployments can point to same DB.
+# Lire DATABASE_PATH depuis la variable d'environnement ou depuis st.secrets (si Streamlit)
+try:
+    import streamlit as _st  # import protégé pour fonctionner hors Streamlit aussi
+    streamlit_db_path = _st.secrets.get("DATABASE_PATH") if hasattr(_st, "secrets") else None
+except Exception:
+    streamlit_db_path = None
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
-DB_PATH = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
+DB_PATH = os.environ.get("DATABASE_PATH", streamlit_db_path or DEFAULT_DB_PATH)
 
 class Database:
     def __init__(self):
@@ -14,10 +20,10 @@ class Database:
     
     def _connect(self):
         """
-        Return a sqlite3 connection with some pragmas set for better concurrency.
-        - timeout: wait up to 30s if DB is locked
-        - check_same_thread=False: allow access from different threads (use cautiously)
-        - WAL mode for better concurrent reads/writes
+        Connexion SQLite configurée :
+        - timeout: attendre si DB verrouillée
+        - check_same_thread=False: permis pour accès multi-thread léger (Streamlit)
+        - WAL pour meilleure concurrence lecture/écriture
         """
         conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -25,12 +31,11 @@ class Database:
             conn.execute('PRAGMA journal_mode=WAL;')
             conn.execute('PRAGMA foreign_keys = ON;')
         except Exception:
-            # pragma may fail on some environments; ignore but continue
             pass
         return conn
 
     def init_db(self):
-        """Créer les tables"""
+        """Créer les tables si nécessaire"""
         try:
             conn = self._connect()
             cursor = conn.cursor()
