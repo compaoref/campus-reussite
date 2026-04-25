@@ -1,3 +1,5 @@
+
+````python name=main_app.py
 import streamlit as st
 import pandas as pd
 import re
@@ -37,6 +39,16 @@ if "admin_tab" not in st.session_state:
 def is_valid_email(email):
     return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
 
+# Load secrets for admin / preusers
+try:
+    admins = st.secrets.get("admins", {})
+    preusers = st.secrets.get("preusers", {})
+    preusers_info = st.secrets.get("preusers_info", {})
+except Exception:
+    admins = {}
+    preusers = {}
+    preusers_info = {}
+
 # --------------------------
 # Administration interface
 # --------------------------
@@ -57,7 +69,6 @@ def render_admin():
             pwd = st.text_input("Mot de passe", type="password", key="admin_pwd_input")
             if st.button("Se Connecter", use_container_width=True):
                 try:
-                    admins = st.secrets.get("admins", {})
                     if email in admins and admins[email] == pwd:
                         st.session_state.admin_auth = True
                         st.session_state.admin_email = email
@@ -325,28 +336,29 @@ def render_admin():
             else:
                 st.info("Aucun feedback")
             st.divider()
-            st.markdown("**Actions de Debug**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button("🔄 Rafraîchir"):
-                    st.experimental_rerun()
-            with col2:
-                if st.button("🗑️ Supprimer TOUS les quiz"):
-                    if st.checkbox("J'accepte de tout supprimer"):
-                        for q in db.get_all_quiz():
-                            db.delete_quiz(q['id'])
-                        st.success("✅ Tous les quiz supprimés")
-                        st.experimental_rerun()
-            with col3:
-                if st.button("⚠️ Reset complète"):
-                    st.warning("Cette action supprimera toute la base!")
-                    if st.checkbox("JE SUIS SÛR"):
-                        import os
-                        db_path = db.get_db_path()
-                        if os.path.exists(db_path):
-                            os.remove(db_path)
-                        st.success("✅ Base réinitialisée - Redémarrez l'app!")
-                        st.experimental_rerun()
+
+            # === Quick DB tests (INSERT) ===
+            st.markdown("### Quick DB tests")
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                if st.button("➕ Insert test user"):
+                    ok = db.add_user("TestNom", "TestPrenom", "test+user@example.com", f"testuser{int(pd.Timestamp.now().timestamp())}", "pass1234")
+                    st.write("Insert user:", ok)
+            with col_b:
+                if st.button("➕ Insert test quiz"):
+                    ok = db.add_quiz("Q test ?", "A", "B", "C", "D", "A", "Explication", "Général")
+                    st.write("Insert quiz:", ok)
+            with col_c:
+                if st.button("➕ Insert test feedback"):
+                    ok = db.add_feedback("test+user@example.com", "Titre test", "Message test", "Suggestion")
+                    st.write("Insert feedback:", ok)
+
+            st.divider()
+            st.write("Counts now:")
+            st.write("Users:", len(db.get_all_users()))
+            st.write("Quiz:", len(db.get_all_quiz()))
+            st.write("Pending:", len(db.get_pending_quiz()))
+            st.write("Feedback:", len(db.get_all_feedback()))
 
 # --------------------------
 # Apprenant interface
@@ -379,14 +391,28 @@ def render_apprenant():
                 email = st.text_input("Email", key="user_login_email")
                 pwd = st.text_input("Mot de passe", type="password", key="user_login_pwd")
                 if st.button("Se Connecter", use_container_width=True, type="primary"):
+                    # Check admin from secrets first
                     try:
-                        admins = st.secrets.get("admins", {})
                         if email in admins and admins[email] == pwd:
                             st.session_state.logged_in = True
                             st.session_state.user = {'nom': 'Admin', 'prenom': 'Campus', 'email': email}
                             st.experimental_rerun()
                     except Exception:
                         pass
+
+                    # preusers from secrets
+                    if email in preusers and preusers[email] == pwd:
+                        info = preusers_info.get(email, {})
+                        st.session_state.logged_in = True
+                        st.session_state.user = {
+                            'nom': info.get('nom', ''),
+                            'prenom': info.get('prenom', ''),
+                            'email': email,
+                            'username': info.get('username', email.split('@')[0])
+                        }
+                        st.experimental_rerun()
+
+                    # Normal DB users
                     user = db.get_user_by_email(email)
                     if user and user['password'] == pwd:
                         if user['status'] == 'bloqué':
