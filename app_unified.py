@@ -1,6 +1,6 @@
 """
-🎓 CAMPUS RÉUSSITE v6.0
-Application Fusionnée - Admin + Apprenant dans un seul fichier
+🎓 PLATEFORME CAMPUS RÉUSSITE 
+Réussir ou mieux Réussir !
 """
 
 import streamlit as st
