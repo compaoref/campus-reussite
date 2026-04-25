@@ -4,7 +4,6 @@ from database import db
 
 st.set_page_config(page_title="Campus Réussite", layout="wide")
 
-# --- STYLE MINIMALISTE ---
 st.markdown("""
 <style>
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -13,7 +12,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION SESSION ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user" not in st.session_state:
@@ -24,15 +22,6 @@ if "page" not in st.session_state:
 def is_valid_email(email):
     return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
 
-# --- DEBUG: afficher chemin DB et counts ( temporaire ) ---
-try:
-    # affiche dans la barre latérale pour ne pas polluer l'UI principale
-    st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
-    st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
-except Exception as e:
-    st.sidebar.error(f"DEBUG ERREUR: {e}")
-
-# --- PAGE AUTHENTICATION ---
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -55,7 +44,6 @@ if not st.session_state.logged_in:
             pwd = st.text_input("Mot de passe", type="password")
             
             if st.button("Se Connecter", use_container_width=True, type="primary"):
-                # Vérifier admin
                 try:
                     admins = st.secrets.get("admins", {})
                     if email in admins and admins[email] == pwd:
@@ -65,7 +53,6 @@ if not st.session_state.logged_in:
                 except:
                     pass
                 
-                # Vérifier apprenant
                 user = db.get_user_by_email(email)
                 if user and user['password'] == pwd:
                     if user['status'] == 'bloqué':
@@ -77,7 +64,7 @@ if not st.session_state.logged_in:
                 else:
                     st.error("❌ Email ou mot de passe incorrect")
         
-        else:  # signup
+        else:
             nom = st.text_input("Nom")
             prenom = st.text_input("Prénom")
             email = st.text_input("Email")
@@ -104,7 +91,6 @@ if not st.session_state.logged_in:
                 else:
                     st.error("❌ Erreur lors de l'inscription")
 
-# --- APP PRINCIPALE ---
 else:
     user = st.session_state.user
     
@@ -115,7 +101,6 @@ else:
     </div>
     """, unsafe_allow_html=True)
     
-    # Navigation
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         if st.button("🏠 Accueil", use_container_width=True):
@@ -141,7 +126,6 @@ else:
     
     st.divider()
     
-    # === ACCUEIL ===
     if st.session_state.page == "accueil":
         st.markdown(f"""
         <div class="card">
@@ -162,7 +146,6 @@ else:
             st.session_state.page = "quiz"
             st.rerun()
     
-    # === QUIZ ===
     elif st.session_state.page == "quiz":
         st.markdown("### 🎯 Quiz Disponibles")
         
@@ -172,16 +155,14 @@ else:
         if not quiz_list:
             st.info("📋 Aucun quiz pour le moment")
         else:
-            # Normalize categories: replace empty/None with 'Sans catégorie'
-            categories = sorted(set([(q.get('categorie') or 'Sans catégorie') for q in quiz_list]))
+            categories = sorted(set([q['categorie'] for q in quiz_list]))
             selected_cat = st.selectbox("Catégorie", categories)
             
-            # Filter using normalized category
-            cat_quizzes = [q for q in quiz_list if (q.get('categorie') or 'Sans catégorie') == selected_cat]
+            cat_quizzes = [q for q in quiz_list if q['categorie'] == selected_cat]
             st.write(f"**{len(cat_quizzes)} quiz dans cette catégorie**")
             
             for idx, q in enumerate(cat_quizzes):
-                with st.container(border=True):
+                with st.container():
                     st.markdown(f"**Q{idx+1}/{len(cat_quizzes)}: {q['question']}**")
                     
                     options = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
@@ -196,7 +177,6 @@ else:
                         else:
                             st.error(f"❌ Réponses: {', '.join(correct)}\n\n💡 {q['explication']}")
     
-    # === PROFIL ===
     elif st.session_state.page == "profil":
         st.markdown("### 👤 Mon Profil")
         col1, col2 = st.columns(2)
@@ -210,7 +190,6 @@ else:
         with col2:
             st.metric("Username", user.get('username', 'N/A'))
     
-    # === FEEDBACK ===
     elif st.session_state.page == "feedback":
         st.markdown("### 💬 Envoyer un Feedback")
         
