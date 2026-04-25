@@ -53,7 +53,7 @@ else:
     if "admin_tab" not in st.session_state:
         st.session_state.admin_tab = "dashboard"
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         if st.button("📊 Dashboard", use_container_width=True):
             st.session_state.admin_tab = "dashboard"
@@ -73,6 +73,10 @@ else:
     with col5:
         if st.button("💬 Feedback", use_container_width=True):
             st.session_state.admin_tab = "feedback"
+            st.rerun()
+    with col6:
+        if st.button("🔍 DEBUG", use_container_width=True):
+            st.session_state.admin_tab = "debug"
             st.rerun()
     
     st.divider()
@@ -291,3 +295,78 @@ else:
                 st.divider()
         else:
             st.info("Aucun feedback")
+    
+    # === DEBUG ===
+    elif st.session_state.admin_tab == "debug":
+        st.markdown("### 🔍 DEBUG - État de la Base de Données")
+        st.warning("ℹ️ Cet écran montre l'état exact de la base de données")
+        
+        st.divider()
+        st.markdown("**Chemin de la DB:**")
+        st.code(db.get_db_path())
+        
+        st.divider()
+        st.markdown("**Table: quiz (Quiz Publiés)**")
+        quiz_list = db.get_all_quiz()
+        st.write(f"Nombre de quiz: {len(quiz_list)}")
+        if quiz_list:
+            df = pd.DataFrame(quiz_list)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.warning("❌ Aucun quiz dans la table quiz")
+        
+        st.divider()
+        st.markdown("**Table: quiz_pending (Quiz en Révision)**")
+        pending = db.get_pending_quiz()
+        st.write(f"Nombre en attente: {len(pending)}")
+        if pending:
+            df = pd.DataFrame(pending)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("Aucun quiz en attente")
+        
+        st.divider()
+        st.markdown("**Table: utilisateurs (Apprenants)**")
+        users = db.get_all_users()
+        st.write(f"Nombre d'apprenants: {len(users)}")
+        if users:
+            df = pd.DataFrame(users)
+            st.dataframe(df[['nom', 'prenom', 'email', 'status']], use_container_width=True)
+        else:
+            st.warning("❌ Aucun apprenant")
+        
+        st.divider()
+        st.markdown("**Table: feedback**")
+        feedback_list = db.get_all_feedback()
+        st.write(f"Nombre de feedbacks: {len(feedback_list)}")
+        if feedback_list:
+            df = pd.DataFrame(feedback_list)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("Aucun feedback")
+        
+        st.divider()
+        st.markdown("**Actions de Debug**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🔄 Rafraîchir"):
+                st.rerun()
+        with col2:
+            if st.button("🗑️ Supprimer TOUS les quiz"):
+                if st.checkbox("J'accepte de tout supprimer"):
+                    quiz_list = db.get_all_quiz()
+                    for q in quiz_list:
+                        db.delete_quiz(q['id'])
+                    st.success("✅ Tous les quiz supprimés")
+                    st.rerun()
+        with col3:
+            if st.button("⚠️ Reset complète"):
+                st.warning("Cette action supprimera toute la base!")
+                if st.checkbox("JE SUIS SÛR"):
+                    import os
+                    db_path = db.get_db_path()
+                    if os.path.exists(db_path):
+                        os.remove(db_path)
+                    st.success("✅ Base réinitialisée - Redémarrez les apps!")
+                    st.rerun()
