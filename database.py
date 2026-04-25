@@ -1,101 +1,19 @@
 import sqlite3
 import os
-import sys
 from datetime import datetime
 
-# --- CHEMIN ABSOLU GARANTI, OVERRIDABLE VIA ENV ---
+# Le chemin de la DB est toujours dans le même dossier que ce script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Allow override via environment variable (useful for deployment / sharing a DB)
-DB_PATH = os.environ.get("CAMPUS_DB_PATH", os.path.join(SCRIPT_DIR, "campus.db"))
-
-print(f"[DATABASE] Chemin de la DB: {DB_PATH}", file=sys.stderr)
+DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
 
 class Database:
-    def __init__(self):
-        self.init_db()
-    
     def get_db_path(self):
-        # utile pour debugging dans l'app
         return DB_PATH
 
     def get_connection(self):
-        """Connexion à la DB"""
-        # Note: if you later use threads/WSGI, consider check_same_thread=False or a proper DB server
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
-    
-    def init_db(self):
-        """Initialiser la DB"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Utilisateurs
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS utilisateurs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nom TEXT NOT NULL,
-                    prenom TEXT NOT NULL,
-                    email TEXT UNIQUE NOT NULL,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    status TEXT DEFAULT 'actif',
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Quiz
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS quiz (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    question TEXT NOT NULL,
-                    option_a TEXT NOT NULL,
-                    option_b TEXT NOT NULL,
-                    option_c TEXT NOT NULL,
-                    option_d TEXT NOT NULL,
-                    reponses_correctes TEXT NOT NULL,
-                    explication TEXT NOT NULL,
-                    categorie TEXT NOT NULL,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Quiz Pending
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS quiz_pending (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    question TEXT NOT NULL,
-                    option_a TEXT NOT NULL,
-                    option_b TEXT NOT NULL,
-                    option_c TEXT NOT NULL,
-                    option_d TEXT NOT NULL,
-                    reponses_correctes TEXT NOT NULL,
-                    explication TEXT NOT NULL,
-                    categorie TEXT NOT NULL,
-                    source_file TEXT,
-                    date_import TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Feedback
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS feedback (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT NOT NULL,
-                    titre TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
-            print(f"[DATABASE] Initialized: {DB_PATH}", file=sys.stderr)
-        except Exception as e:
-            print(f"[DATABASE ERROR] {e}", file=sys.stderr)
     
     # --- UTILISATEURS ---
     def add_user(self, nom, prenom, email, username, password):
@@ -108,10 +26,9 @@ class Database:
             ''', (nom, prenom, email, username, password, datetime.now().isoformat()))
             conn.commit()
             conn.close()
-            print(f"[DATABASE] User added: {email}", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] add_user: {e}", file=sys.stderr)
+            print(f"Erreur add_user: {e}")
             return False
     
     def get_user_by_email(self, email):
@@ -121,7 +38,6 @@ class Database:
             cursor.execute('SELECT * FROM utilisateurs WHERE email = ?', (email,))
             row = cursor.fetchone()
             conn.close()
-            
             if row:
                 return {
                     'id': row['id'],
@@ -135,7 +51,7 @@ class Database:
                 }
             return None
         except Exception as e:
-            print(f"[DATABASE ERROR] get_user_by_email: {e}", file=sys.stderr)
+            print(f"Erreur get_user_by_email: {e}")
             return None
     
     def get_all_users(self):
@@ -145,7 +61,6 @@ class Database:
             cursor.execute('SELECT * FROM utilisateurs ORDER BY date_creation DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             users = []
             for row in rows:
                 users.append({
@@ -158,10 +73,9 @@ class Database:
                     'status': row['status'],
                     'date_creation': row['date_creation']
                 })
-            print(f"[DATABASE] Loaded {len(users)} users", file=sys.stderr)
             return users
         except Exception as e:
-            print(f"[DATABASE ERROR] get_all_users: {e}", file=sys.stderr)
+            print(f"Erreur get_all_users: {e}")
             return []
     
     def update_user_status(self, user_id, status):
@@ -173,7 +87,7 @@ class Database:
             conn.close()
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] update_user_status: {e}", file=sys.stderr)
+            print(f"Erreur update_user_status: {e}")
             return False
     
     def delete_user(self, user_id):
@@ -185,7 +99,7 @@ class Database:
             conn.close()
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] delete_user: {e}", file=sys.stderr)
+            print(f"Erreur delete_user: {e}")
             return False
     
     # --- QUIZ ---
@@ -199,10 +113,9 @@ class Database:
             ''', (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie))
             conn.commit()
             conn.close()
-            print(f"[DATABASE] Quiz added: {question[:50]}...", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] add_quiz: {e}", file=sys.stderr)
+            print(f"Erreur add_quiz: {e}")
             return False
     
     def get_all_quiz(self):
@@ -212,7 +125,6 @@ class Database:
             cursor.execute('SELECT * FROM quiz ORDER BY categorie, date_creation')
             rows = cursor.fetchall()
             conn.close()
-            
             quiz = []
             for row in rows:
                 quiz.append({
@@ -226,10 +138,9 @@ class Database:
                     'explication': row['explication'],
                     'categorie': row['categorie']
                 })
-            print(f"[DATABASE] Loaded {len(quiz)} quiz", file=sys.stderr)
             return quiz
         except Exception as e:
-            print(f"[DATABASE ERROR] get_all_quiz: {e}", file=sys.stderr)
+            print(f"Erreur get_all_quiz: {e}")
             return []
     
     def get_quiz_count(self):
@@ -241,7 +152,7 @@ class Database:
             conn.close()
             return count
         except Exception as e:
-            print(f"[DATABASE ERROR] get_quiz_count: {e}", file=sys.stderr)
+            print(f"Erreur get_quiz_count: {e}")
             return 0
     
     # --- QUIZ PENDING ---
@@ -257,7 +168,7 @@ class Database:
             conn.close()
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] add_pending_quiz: {e}", file=sys.stderr)
+            print(f"Erreur add_pending_quiz: {e}")
             return False
     
     def get_pending_quiz(self):
@@ -267,7 +178,6 @@ class Database:
             cursor.execute('SELECT * FROM quiz_pending ORDER BY date_import DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             quiz = []
             for row in rows:
                 quiz.append({
@@ -282,34 +192,28 @@ class Database:
                     'categorie': row['categorie'],
                     'source_file': row['source_file']
                 })
-            print(f"[DATABASE] Loaded {len(quiz)} pending quiz", file=sys.stderr)
             return quiz
         except Exception as e:
-            print(f"[DATABASE ERROR] get_pending_quiz: {e}", file=sys.stderr)
+            print(f"Erreur get_pending_quiz: {e}")
             return []
     
     def approve_pending_quiz(self, pending_id):
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
             cursor.execute('SELECT * FROM quiz_pending WHERE id = ?', (pending_id,))
             row = cursor.fetchone()
-            
             if row:
                 cursor.execute('''
                     INSERT INTO quiz (question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (row['question'], row['option_a'], row['option_b'], row['option_c'], row['option_d'], row['reponses_correctes'], row['explication'], row['categorie']))
-                
                 cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
-            
             conn.commit()
             conn.close()
-            print(f"[DATABASE] Quiz approved: {pending_id}", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] approve_pending_quiz: {e}", file=sys.stderr)
+            print(f"Erreur approve_pending_quiz: {e}")
             return False
     
     def reject_pending_quiz(self, pending_id):
@@ -319,10 +223,9 @@ class Database:
             cursor.execute('DELETE FROM quiz_pending WHERE id = ?', (pending_id,))
             conn.commit()
             conn.close()
-            print(f"[DATABASE] Quiz rejected: {pending_id}", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] reject_pending_quiz: {e}", file=sys.stderr)
+            print(f"Erreur reject_pending_quiz: {e}")
             return False
     
     def update_pending_quiz(self, pending_id, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
@@ -338,7 +241,7 @@ class Database:
             conn.close()
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] update_pending_quiz: {e}", file=sys.stderr)
+            print(f"Erreur update_pending_quiz: {e}")
             return False
     
     # --- FEEDBACK ---
@@ -352,10 +255,9 @@ class Database:
             ''', (email, titre, message, type_feedback, datetime.now().isoformat()))
             conn.commit()
             conn.close()
-            print(f"[DATABASE] Feedback added: {email}", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"[DATABASE ERROR] add_feedback: {e}", file=sys.stderr)
+            print(f"Erreur add_feedback: {e}")
             return False
     
     def get_all_feedback(self):
@@ -365,7 +267,6 @@ class Database:
             cursor.execute('SELECT * FROM feedback ORDER BY date_creation DESC')
             rows = cursor.fetchall()
             conn.close()
-            
             feedback = []
             for row in rows:
                 feedback.append({
@@ -376,11 +277,10 @@ class Database:
                     'type': row['type'],
                     'date_creation': row['date_creation']
                 })
-            print(f"[DATABASE] Loaded {len(feedback)} feedback", file=sys.stderr)
             return feedback
         except Exception as e:
-            print(f"[DATABASE ERROR] get_all_feedback: {e}", file=sys.stderr)
+            print(f"Erreur get_all_feedback: {e}")
             return []
 
-# --- INSTANCE GLOBALE ---
+# Instance globale
 db = Database()
