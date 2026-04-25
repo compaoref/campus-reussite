@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import re
 from database import db
@@ -14,14 +13,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Optional debug in sidebar when environment variable DEBUG_DB=1 is set
-if str(os.environ.get("DEBUG_DB", "")).strip() == "1":
-    try:
-        st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
-        st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
-    except Exception:
-        pass
-
 # --- INITIALISATION SESSION ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -32,6 +23,14 @@ if "page" not in st.session_state:
 
 def is_valid_email(email):
     return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
+
+# --- DEBUG: afficher chemin DB et counts ( temporaire ) ---
+try:
+    # affiche dans la barre latérale pour ne pas polluer l'UI principale
+    st.sidebar.info(f"DEBUG DB: {db.get_db_path()}")
+    st.sidebar.info(f"DEBUG quiz_count: {db.get_quiz_count()}  | pending: {len(db.get_pending_quiz())}")
+except Exception as e:
+    st.sidebar.error(f"DEBUG ERREUR: {e}")
 
 # --- PAGE AUTHENTICATION ---
 if not st.session_state.logged_in:
@@ -56,6 +55,7 @@ if not st.session_state.logged_in:
             pwd = st.text_input("Mot de passe", type="password")
             
             if st.button("Se Connecter", use_container_width=True, type="primary"):
+                # Vérifier admin
                 try:
                     admins = st.secrets.get("admins", {})
                     if email in admins and admins[email] == pwd:
@@ -65,6 +65,7 @@ if not st.session_state.logged_in:
                 except:
                     pass
                 
+                # Vérifier apprenant
                 user = db.get_user_by_email(email)
                 if user and user['password'] == pwd:
                     if user['status'] == 'bloqué':
@@ -171,14 +172,16 @@ else:
         if not quiz_list:
             st.info("📋 Aucun quiz pour le moment")
         else:
+            # Normalize categories: replace empty/None with 'Sans catégorie'
             categories = sorted(set([(q.get('categorie') or 'Sans catégorie') for q in quiz_list]))
             selected_cat = st.selectbox("Catégorie", categories)
             
+            # Filter using normalized category
             cat_quizzes = [q for q in quiz_list if (q.get('categorie') or 'Sans catégorie') == selected_cat]
             st.write(f"**{len(cat_quizzes)} quiz dans cette catégorie**")
             
             for idx, q in enumerate(cat_quizzes):
-                with st.container():
+                with st.container(border=True):
                     st.markdown(f"**Q{idx+1}/{len(cat_quizzes)}: {q['question']}**")
                     
                     options = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
