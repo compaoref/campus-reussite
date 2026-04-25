@@ -140,7 +140,7 @@ else:
         
         if pending:
             for idx, q in enumerate(pending):
-                with st.container(border=True):
+                with st.container():
                     col1, col2 = st.columns([4, 1])
                     
                     with col1:
@@ -156,7 +156,6 @@ else:
                             st.text(f"Explication: {q['explication']}")
                         
                         with st.expander("✏️ Modifier"):
-                            # Keys made explicit and unique to avoid collisions
                             question = st.text_input("Question", value=q['question'], key=f"q_{idx}_{q['id']}")
                             opt_a = st.text_input("A", value=q['option_a'], key=f"opt_a_{idx}_{q['id']}")
                             opt_b = st.text_input("B", value=q['option_b'], key=f"opt_b_{idx}_{q['id']}")
@@ -241,7 +240,7 @@ else:
         
         if feedback_list:
             for fb in feedback_list:
-                with st.container(border=True):
+                with st.container():
                     col1, col2 = st.columns([4, 1])
                     with col1:
                         st.markdown(f"**{fb['titre']}**")
