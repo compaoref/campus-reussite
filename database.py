@@ -1,18 +1,38 @@
 import sqlite3
 import os
+import traceback
 from datetime import datetime
 
+# Allow overriding DB path via env var so multiple deployments can point to same DB.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
+DEFAULT_DB_PATH = os.path.join(SCRIPT_DIR, "campus.db")
+DB_PATH = os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
 
 class Database:
     def __init__(self):
         self.init_db()
     
+    def _connect(self):
+        """
+        Return a sqlite3 connection with some pragmas set for better concurrency.
+        - timeout: wait up to 30s if DB is locked
+        - check_same_thread=False: allow access from different threads (use cautiously)
+        - WAL mode for better concurrent reads/writes
+        """
+        conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('PRAGMA journal_mode=WAL;')
+            conn.execute('PRAGMA foreign_keys = ON;')
+        except Exception:
+            # pragma may fail on some environments; ignore but continue
+            pass
+        return conn
+
     def init_db(self):
         """Créer les tables"""
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = self._connect()
             cursor = conn.cursor()
             
             cursor.execute('''CREATE TABLE IF NOT EXISTS utilisateurs (
@@ -66,11 +86,10 @@ class Database:
             conn.close()
         except Exception as e:
             print(f"Init DB error: {e}")
+            traceback.print_exc()
     
     def get_connection(self):
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return self._connect()
     
     def add_user(self, nom, prenom, email, username, password):
         try:
@@ -83,6 +102,7 @@ class Database:
             return True
         except Exception as e:
             print(f"add_user error: {e}")
+            traceback.print_exc()
             return False
     
     def get_user_by_email(self, email):
@@ -106,6 +126,7 @@ class Database:
             return None
         except Exception as e:
             print(f"get_user_by_email error: {e}")
+            traceback.print_exc()
             return None
     
     def get_all_users(self):
@@ -130,6 +151,7 @@ class Database:
             return users
         except Exception as e:
             print(f"get_all_users error: {e}")
+            traceback.print_exc()
             return []
     
     def update_user_status(self, user_id, status):
@@ -142,6 +164,7 @@ class Database:
             return True
         except Exception as e:
             print(f"update_user_status error: {e}")
+            traceback.print_exc()
             return False
     
     def delete_user(self, user_id):
@@ -154,6 +177,7 @@ class Database:
             return True
         except Exception as e:
             print(f"delete_user error: {e}")
+            traceback.print_exc()
             return False
     
     def add_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
@@ -167,6 +191,7 @@ class Database:
             return True
         except Exception as e:
             print(f"add_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def get_all_quiz(self):
@@ -192,6 +217,7 @@ class Database:
             return quiz
         except Exception as e:
             print(f"get_all_quiz error: {e}")
+            traceback.print_exc()
             return []
     
     def get_quiz_count(self):
@@ -204,6 +230,7 @@ class Database:
             return count
         except Exception as e:
             print(f"get_quiz_count error: {e}")
+            traceback.print_exc()
             return 0
     
     def delete_quiz(self, quiz_id):
@@ -216,6 +243,7 @@ class Database:
             return True
         except Exception as e:
             print(f"delete_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def add_pending_quiz(self, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie, source_file):
@@ -229,6 +257,7 @@ class Database:
             return True
         except Exception as e:
             print(f"add_pending_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def get_pending_quiz(self):
@@ -255,6 +284,7 @@ class Database:
             return quiz
         except Exception as e:
             print(f"get_pending_quiz error: {e}")
+            traceback.print_exc()
             return []
     
     def approve_pending_quiz(self, pending_id):
@@ -272,6 +302,7 @@ class Database:
             return True
         except Exception as e:
             print(f"approve_pending_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def reject_pending_quiz(self, pending_id):
@@ -284,6 +315,7 @@ class Database:
             return True
         except Exception as e:
             print(f"reject_pending_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def update_pending_quiz(self, pending_id, question, option_a, option_b, option_c, option_d, reponses_correctes, explication, categorie):
@@ -297,6 +329,7 @@ class Database:
             return True
         except Exception as e:
             print(f"update_pending_quiz error: {e}")
+            traceback.print_exc()
             return False
     
     def add_feedback(self, email, titre, message, type_feedback):
@@ -310,6 +343,7 @@ class Database:
             return True
         except Exception as e:
             print(f"add_feedback error: {e}")
+            traceback.print_exc()
             return False
     
     def get_all_feedback(self):
@@ -332,6 +366,7 @@ class Database:
             return feedback
         except Exception as e:
             print(f"get_all_feedback error: {e}")
+            traceback.print_exc()
             return []
     
     def get_db_path(self):
