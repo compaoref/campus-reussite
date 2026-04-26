@@ -362,7 +362,7 @@ if not st.session_state.logged_in:
         st.markdown("""
         <div class="header-title">
             <h1>🎓 Campus Réussite</h1>
-            <p>Plateforme Sécurisée - Termux Compatible</p>
+            <p>Plateforme Sécurisée- Dynamique et Intuitive</p>
         </div>
         """, unsafe_allow_html=True)
         
