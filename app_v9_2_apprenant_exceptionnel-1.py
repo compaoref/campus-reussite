@@ -787,7 +787,7 @@ def display_correction(quizzes, quiz_answers, serie):
     # Calculer le score et collecter les détails
     for q in quizzes:
         user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        correct_answers = q['reponses_correctes'].split(",")
+        correct_answers = [x.strip() for x in q['reponses_correctes'].split(",")]
         is_correct = user_answer in correct_answers
         
         if is_correct:
@@ -1073,8 +1073,10 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         
         # Quiz Display
         for s in series:
-            if st.session_state.page == f"quiz_{s['id']}" and st.session_state.current_quizzes:
-                quizzes = st.session_state.current_quizzes
+    if (
+        st.session_state.page == f"quiz_{s['id']}"
+        or st.session_state.page == f"results_{s['id']}"
+    ) and st.session_state.current_quizzes:
                 
                 st.markdown(f"""
                 <div class="header-main" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); text-align: center;">
@@ -1141,7 +1143,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             score = 0
                             for q in quizzes:
                                 if q['id'] in st.session_state.quiz_answers:
-                                    if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
+                                    if st.session_state.quiz_answers[q['id']] in [x.strip() for x in q['reponses_correctes'].split(",")]:
                                         score += 1
                             
                             percentage = (score / len(quizzes)) * 100
