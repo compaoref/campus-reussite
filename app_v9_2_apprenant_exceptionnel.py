@@ -28,7 +28,7 @@ DB_PATH = "campus.db"
 LOGO_URL = "https://via.placeholder.com/150/667eea/ffffff?text=Campus"  # À remplacer par votre logo!
 # Si vous avez un logo local: LOGO_PATH = "logo.png"
 
-# ========== CSS EXTRAORDINAIRE ==========
+# ========== CSS (COMPLET) ==========
 st.markdown("""
 <style>
     * {
@@ -532,6 +532,28 @@ st.markdown("""
         font-weight: 700;
         color: #1a1a1a;
     }
+
+    /* small card style used across the app */
+    .card {
+        background: white;
+        padding: 18px;
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.04);
+        margin-bottom: 12px;
+    }
+
+    .stat-box {
+        background: linear-gradient(135deg, #fff, #f7fafc);
+        padding: 12px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.03);
+    }
+    .stat-number {
+        font-weight: 700;
+        font-size: 1.6em;
+        color: #111827;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -553,7 +575,7 @@ class DB:
             role TEXT DEFAULT 'apprenant',
             status TEXT DEFAULT 'actif', 
             session_minutes INTEGER DEFAULT 120,
-            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            last_activity TEXT DEFAULT CURRENT_TIMESTAMP)''')
         
         c.execute('''CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY, 
@@ -623,11 +645,14 @@ class DB:
     def q(self, sql, p=()):
         try:
             conn = sqlite3.connect(DB_PATH)
-            conn.execute(sql, p)
+            cur = conn.cursor()
+            cur.execute(sql, p)
             conn.commit()
+            lastrowid = cur.lastrowid
             conn.close()
-            return True
-        except Exception as e:
+            # return lastrowid for inserts, True otherwise
+            return lastrowid if lastrowid != 0 else True
+        except Exception:
             return False
     
     def f1(self, sql, p=()):
@@ -659,12 +684,37 @@ def verify_pwd(p, h):
     return hash_pwd(p) == h
 
 # ========== SESSION MANAGEMENT ==========
+def parse_datetime_safe(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value)
+        except:
+            return None
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except:
+            # fallback common sqlite format
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    return datetime.strptime(value, fmt)
+                except:
+                    continue
+    return None
+
 def check_session_timeout():
     if st.session_state.logged_in and st.session_state.user and not st.session_state.is_admin:
         user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (st.session_state.user['id'],))
         if user:
-            last_activity = datetime.fromisoformat(user['last_activity'])
-            timeout_minutes = user['session_minutes']
+            last_activity = parse_datetime_safe(user.get('last_activity'))
+            if last_activity is None:
+                # if missing, consider it's now (no timeout)
+                return
+            timeout_minutes = int(user.get('session_minutes') or 120)
             elapsed = (datetime.now() - last_activity).total_seconds() / 60
             
             if elapsed > timeout_minutes:
@@ -675,8 +725,9 @@ def check_session_timeout():
 
 def update_activity():
     if st.session_state.logged_in and st.session_state.user and not st.session_state.is_admin:
+        # store ISO string to keep consistent format
         db.q('UPDATE utilisateurs SET last_activity=? WHERE id=?',
-            (datetime.now(), st.session_state.user['id']))
+            (datetime.now().isoformat(), st.session_state.user['id']))
 
 # ========== EXPORT/IMPORT ==========
 def export_database():
@@ -692,7 +743,7 @@ def export_database():
             'version': '9.2'
         }
         return json.dumps(export_data, indent=2, default=str)
-    except Exception as e:
+    except Exception:
         return None
 
 def import_database(json_data):
@@ -732,7 +783,7 @@ def import_database(json_data):
                  fb.get('type'), fb.get('date_feedback')))
         
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 # ========== INIT SESSION STATE ==========
@@ -771,54 +822,106 @@ def display_logo():
 
 def get_score_color(percentage):
     """Retourne la couleur basée sur le pourcentage"""
-    if percentage >= 80:
+    try:
+        p = float(percentage)
+    except:
+        p = 0.0
+    if p >= 80:
         return "green", "🎉 Excellent travail!", "#34d399"
-    elif percentage >= 60:
+    elif p >= 60:
         return "orange", "👍 Bon travail!", "#f59e0b"
     else:
         return "red", "💪 Continuez vos efforts!", "#ef4444"
 
+def normalize_answer(a):
+    if a is None:
+        return 'Non répondu'
+    try:
+        s = str(a).strip().upper()
+        return s if s else 'Non répondu'
+    except:
+        return 'Non répondu'
+
+def parse_correct_answers(raw):
+    if not raw:
+        return []
+    parts = [p.strip().upper() for p in str(raw).split(",")]
+    return [p for p in parts if p]
+
+def generate_correction_html(serie, details, score, percentage):
+    """Génère un HTML complet de la correction (avec CSS inclus)"""
+    # Reuse the CSS defined above to keep style consistent
+    css = ""  # keep minimal since CSS is already loaded in app; include some inline to ensure offline usage
+    html_parts = []
+    html_parts.append(f"<html><head><meta charset='utf-8'><title>Correction - {serie.get('nom','')}</title><style>{''}</style></head><body>")
+    html_parts.append(f"<h1>Correction - {serie.get('nom','')}</h1>")
+    html_parts.append(f"<h2>Score: {score} / {len(details)} — {percentage:.1f}%</h2>")
+    for idx, d in enumerate(details, 1):
+        html_parts.append("<hr>")
+        html_parts.append(f"<h3>Question {idx}: {d.get('question','')}</h3>")
+        ua = d.get('user_answer','Non répondu')
+        html_parts.append(f"<p><strong>Votre réponse: </strong>{ua} — {d.get('options_dict',{{}}).get(ua,'')}</p>")
+        corr = d.get('correct_answers',[])
+        if corr:
+            html_parts.append("<p><strong>Bonne(s) réponse(s):</strong></p><ul>")
+            for c in corr:
+                html_parts.append(f"<li>{c}) {d.get('options_dict',{{}}).get(c,'')}</li>")
+            html_parts.append("</ul>")
+        html_parts.append(f"<p><em>Explication:</em><br>{d.get('explication','')}</p>")
+    html_parts.append("</body></html>")
+    return "\n".join(html_parts)
+
 def display_correction(quizzes, quiz_answers, serie):
     """Affiche les corrections de manière spectaculaire et dynamique"""
+    if not quizzes:
+        st.info("Aucun quiz à corriger.")
+        return 0, 0.0
     
     score = 0
     details = []
     
     # Calculer le score et collecter les détails
     for q in quizzes:
-        user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        correct_answers = q['reponses_correctes'].split(",")
-        is_correct = user_answer in correct_answers
+        # Normalize stored options (avoid None)
+        opt_a = q.get('option_a') or ''
+        opt_b = q.get('option_b') or ''
+        opt_c = q.get('option_c') or ''
+        opt_d = q.get('option_d') or ''
+        options_dict = {'A': opt_a, 'B': opt_b, 'C': opt_c, 'D': opt_d}
+        
+        raw_user_answer = quiz_answers.get(q['id'], None)
+        user_answer = normalize_answer(raw_user_answer)
+        correct_answers = parse_correct_answers(q.get('reponses_correctes', ''))
+        
+        # determine correctness
+        is_correct = False
+        if user_answer != 'Non répondu' and correct_answers:
+            is_correct = user_answer in correct_answers
         
         if is_correct:
             score += 1
         
         details.append({
-            'question': q['question'],
+            'question': q.get('question') or '',
             'user_answer': user_answer,
             'correct_answers': correct_answers,
-            'option_a': q['option_a'],
-            'option_b': q['option_b'],
-            'option_c': q['option_c'],
-            'option_d': q['option_d'],
-            'explication': q['explication'],
+            'option_a': opt_a,
+            'option_b': opt_b,
+            'option_c': opt_c,
+            'option_d': opt_d,
+            'explication': q.get('explication') or '',
             'is_correct': is_correct,
-            'options_dict': {
-                'A': q['option_a'],
-                'B': q['option_b'],
-                'C': q['option_c'],
-                'D': q['option_d']
-            }
+            'options_dict': options_dict
         })
     
-    percentage = (score / len(quizzes)) * 100
+    percentage = (score / len(quizzes)) * 100 if len(quizzes) > 0 else 0.0
     color_type, message, color_code = get_score_color(percentage)
     
     # HEADER DES CORRECTIONS
     st.markdown(f"""
     <div class="correction-header">
         <h2>📋 Votre Correction Détaillée</h2>
-        <p>{serie['nom']}</p>
+        <p>{serie.get('nom','')}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -893,13 +996,21 @@ def display_correction(quizzes, quiz_answers, serie):
             </div>
             """, unsafe_allow_html=True)
         
-        # Réponses correctes
-        for correct_ans in detail['correct_answers']:
-            correct_option_text = detail['options_dict'].get(correct_ans, 'Non trouvé')
+        # Réponses correctes (peut être multiple)
+        if detail['correct_answers']:
+            for correct_ans in detail['correct_answers']:
+                correct_option_text = detail['options_dict'].get(correct_ans, 'Non trouvé')
+                st.markdown(f"""
+                <div class="correction-row correct-answer">
+                    <span class="correction-label">✅ Bonne réponse:</span>
+                    <span class="correction-text"><strong>{correct_ans}</strong>) {correct_option_text}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
             st.markdown(f"""
             <div class="correction-row correct-answer">
                 <span class="correction-label">✅ Bonne réponse:</span>
-                <span class="correction-text"><strong>{correct_ans}</strong>) {correct_option_text}</span>
+                <span class="correction-text"><em>Non spécifiée</em></span>
             </div>
             """, unsafe_allow_html=True)
         
@@ -912,6 +1023,33 @@ def display_correction(quizzes, quiz_answers, serie):
         """, unsafe_allow_html=True)
         
         st.divider()
+    
+    # Provide download options: HTML always available. PDF if possible.
+    try:
+        html = generate_correction_html(serie, details, score, percentage)
+        st.download_button(
+            label="📄 Télécharger la correction (HTML)",
+            data=html,
+            file_name=f"correction_{serie.get('nom','quiz')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+            mime="text/html"
+        )
+        # Try to provide a PDF using pdfkit if available (optional)
+        try:
+            import pdfkit
+            # try convert
+            pdf_bytes = pdfkit.from_string(html, False)
+            if pdf_bytes:
+                st.download_button(
+                    label="📥 Télécharger la correction (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"correction_{serie.get('nom','quiz')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                    mime="application/pdf"
+                )
+        except Exception:
+            # pdfkit not available or conversion failed; ignore silently
+            pass
+    except Exception:
+        pass
     
     return score, percentage
 
@@ -995,8 +1133,8 @@ if not st.session_state.logged_in:
                 elif not nom or not prenom or not email:
                     st.error("❌ Remplissez tous les champs")
                 else:
-                    result = db.q('INSERT INTO utilisateurs (nom,prenom,email,password_hash) VALUES (?,?,?,?)',
-                        (nom, prenom, email.lower(), hash_pwd(password)))
+                    result = db.q('INSERT INTO utilisateurs (nom,prenom,email,password_hash,last_activity) VALUES (?,?,?,?,?)',
+                        (nom, prenom, email.lower(), hash_pwd(password), datetime.now().isoformat()))
                     if result:
                         st.success("✅ Compte créé avec succès! Connectez-vous maintenant.")
                     else:
@@ -1011,7 +1149,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
     # Header
     st.markdown(f"""
     <div class="header-main">
-        <h1>👋 Bienvenue {st.session_state.user['prenom']}!</h1>
+        <h1>👋 Bienvenue {st.session_state.user.get('prenom','')}!</h1>
         <p>Continuez votre apprentissage et progressez</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1019,9 +1157,12 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
     # Timeout indicator
     user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (st.session_state.user['id'],))
     if user:
-        last_activity = datetime.fromisoformat(user['last_activity'])
-        elapsed = int((datetime.now() - last_activity).total_seconds() / 60)
-        timeout = user['session_minutes']
+        last_activity = parse_datetime_safe(user.get('last_activity'))
+        if last_activity:
+            elapsed = int((datetime.now() - last_activity).total_seconds() / 60)
+        else:
+            elapsed = 0
+        timeout = int(user.get('session_minutes') or 120)
         remaining = max(0, timeout - elapsed)
         
         if remaining > 10:
@@ -1055,13 +1196,13 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     st.markdown(f"""
                     <div class="card-quiz">
                         <div style="font-size: 3em;">📚</div>
-                        <div class="card-quiz-title">{s['nom']}</div>
-                        <div class="card-quiz-desc">{s['description']}</div>
+                        <div class="card-quiz-title">{s.get('nom','')}</div>
+                        <div class="card-quiz-desc">{s.get('description','')}</div>
                         <div class="card-quiz-count">🎯 {len(quizzes)} questions</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    if st.button(f"Commencer {s['nom']}", key=f"quiz_{s['id']}", use_container_width=True):
+                    if st.button(f"Commencer {s.get('nom','')}", key=f"quiz_{s['id']}", use_container_width=True):
                         st.session_state.page = f"quiz_{s['id']}"
                         st.session_state.current_series_id = s['id']
                         st.session_state.current_quizzes = quizzes
@@ -1078,14 +1219,14 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 
                 st.markdown(f"""
                 <div class="header-main" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); text-align: center;">
-                    <h2>📖 {s['nom']}</h2>
-                    <p>{s['description']}</p>
+                    <h2>📖 {s.get('nom','')}</h2>
+                    <p>{s.get('description','')}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 if quizzes:
                     # Progress bar
-                    progress = len(st.session_state.quiz_answers) / len(quizzes)
+                    progress = (len([k for k in st.session_state.quiz_answers.keys() if k in [q['id'] for q in quizzes]]) / len(quizzes)) if len(quizzes)>0 else 0
                     st.markdown(f"""
                     <div class="progress-container">
                         <div style="display: flex; justify-content: space-between;">
@@ -1105,23 +1246,39 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                         st.markdown(f"""
                         <div class="question-box">
                             <div class="question-number">Question {idx}/{len(quizzes)}</div>
-                            <div class="question-text">{q['question']}</div>
+                            <div class="question-text">{q.get('question','')}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Options
+                        # Options safe
+                        option_texts = [
+                            q.get('option_a') or '',
+                            q.get('option_b') or '',
+                            q.get('option_c') or '',
+                            q.get('option_d') or ''
+                        ]
                         options = ["A", "B", "C", "D"]
-                        option_texts = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
+                        
+                        def format_fn(x, ot=option_texts):
+                            try:
+                                letter = str(x)[0].upper()
+                                idx2 = ord(letter) - 65
+                                if 0 <= idx2 < len(ot):
+                                    return f"{letter}) {ot[idx2]}"
+                            except:
+                                pass
+                            return str(x)
                         
                         selected = st.radio(
                             "Sélectionnez votre réponse:",
                             options,
-                            format_func=lambda x: f"{x}) {option_texts[ord(x)-65]}",
+                            format_func=format_fn,
                             key=f"q_{q['id']}",
                             label_visibility="collapsed"
                         )
                         
-                        st.session_state.quiz_answers[q['id']] = selected
+                        # Normalize storage as single letter
+                        st.session_state.quiz_answers[q['id']] = normalize_answer(selected)
                         st.write("")
                     
                     st.write("---")
@@ -1140,13 +1297,28 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             # Sauvegarder le résultat
                             score = 0
                             for q in quizzes:
-                                if q['id'] in st.session_state.quiz_answers:
-                                    if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
-                                        score += 1
+                                user_ans = normalize_answer(st.session_state.quiz_answers.get(q['id'], None))
+                                corrects = parse_correct_answers(q.get('reponses_correctes', ''))
+                                if user_ans != 'Non répondu' and user_ans in corrects:
+                                    score += 1
                             
-                            percentage = (score / len(quizzes)) * 100
-                            db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage) VALUES (?,?,?,?,?)',
-                                (st.session_state.user['id'], s['id'], score, len(quizzes), percentage))
+                            percentage = (score / len(quizzes)) * 100 if len(quizzes)>0 else 0.0
+                            # insert result
+                            res_insert = db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage,date_test) VALUES (?,?,?,?,?,?)',
+                                (st.session_state.user['id'], s['id'], score, len(quizzes), percentage, datetime.now().isoformat()))
+                            
+                            # retrieve inserted resultat id
+                            resultat = db.f1('SELECT * FROM resultats WHERE utilisateur_id=? AND series_id=? ORDER BY date_test DESC LIMIT 1',
+                                             (st.session_state.user['id'], s['id']))
+                            resultat_id = resultat.get('id') if resultat else None
+                            
+                            # insert detailed responses for each quiz
+                            if resultat_id:
+                                for q in quizzes:
+                                    user_ans = normalize_answer(st.session_state.quiz_answers.get(q['id'], None))
+                                    corrects = ",".join(parse_correct_answers(q.get('reponses_correctes','')))
+                                    db.q('INSERT INTO reponses_quiz (resultat_id,quiz_id,reponse_utilisateur,reponses_correctes) VALUES (?,?,?,?)',
+                                         (resultat_id, q['id'], user_ans, corrects))
                             
                             st.session_state.quiz_submitted = True
                             st.session_state.page = f"results_{s['id']}"
@@ -1188,9 +1360,9 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 serie = db.f1('SELECT * FROM series WHERE id=?', (res['series_id'],))
                 
                 # Color based on percentage
-                if res['pourcentage'] >= 80:
+                if res.get('pourcentage', 0) >= 80:
                     emoji = "🎉"
-                elif res['pourcentage'] >= 60:
+                elif res.get('pourcentage', 0) >= 60:
                     emoji = "👍"
                 else:
                     emoji = "💪"
@@ -1199,12 +1371,12 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 <div class="card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <h3>{emoji} {serie['nom']}</h3>
-                            <p style="color: #666;">Résultat: <strong>{res['score']}/{res['total']}</strong></p>
-                            <small>📅 {res['date_test']}</small>
+                            <h3>{emoji} {serie.get('nom','')}</h3>
+                            <p style="color: #666;">Résultat: <strong>{res.get('score',0)}/{res.get('total',0)}</strong></p>
+                            <small>📅 {res.get('date_test')}</small>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 2em; font-weight: bold; color: #667eea;">{res['pourcentage']:.1f}%</div>
+                            <div style="font-size: 2em; font-weight: bold; color: #667eea;">{res.get('pourcentage',0):.1f}%</div>
                         </div>
                     </div>
                 </div>
@@ -1224,7 +1396,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         if st.button("📤 Envoyer le feedback", use_container_width=True, type="primary"):
             if titre and msg:
                 db.q('INSERT INTO feedback (email,titre,message,type) VALUES (?,?,?,?)',
-                    (st.session_state.user['email'], titre, msg, type_fb))
+                    (st.session_state.user.get('email'), titre, msg, type_fb))
                 st.success("✅ Merci! Votre feedback a été envoyé.")
             else:
                 st.error("❌ Remplissez tous les champs")
@@ -1278,13 +1450,47 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         with col4:
             feedback_count = len(db.fa('SELECT * FROM feedback'))
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">💬 Feedbacks</div><div class="stat-number">{feedback_count}</div></div>', unsafe_allow_html=True)
+        
+        st.write("---")
+        st.subheader("📂 Résultats (détails)")
+        # Affichage des résultats et réponses détaillées
+        all_results = db.fa('SELECT * FROM resultats ORDER BY date_test DESC')
+        if all_results:
+            for res in all_results:
+                user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (res.get('utilisateur_id'),))
+                serie = db.f1('SELECT * FROM series WHERE id=?', (res.get('series_id'),))
+                with st.expander(f"{user.get('prenom','')} {user.get('nom','')} — {serie.get('nom','')} — {res.get('score')}/{res.get('total')} ({res.get('pourcentage',0):.1f}%) — {res.get('date_test')}"):
+                    # Fetch detailed responses
+                    answers = db.fa('SELECT rq.*, q.question, q.option_a, q.option_b, q.option_c, q.option_d FROM reponses_quiz rq LEFT JOIN quiz q ON q.id=rq.quiz_id WHERE rq.resultat_id=?', (res.get('id'),))
+                    if answers:
+                        for a in answers:
+                            options_dict = {
+                                'A': a.get('option_a') or '',
+                                'B': a.get('option_b') or '',
+                                'C': a.get('option_c') or '',
+                                'D': a.get('option_d') or ''
+                            }
+                            st.markdown(f"**Question:** {a.get('question','')}")
+                            ua = a.get('reponse_utilisateur') or 'Non répondu'
+                            st.markdown(f"- **Réponse utilisateur:** {ua} — {options_dict.get(ua, '')}")
+                            corr_raw = a.get('reponses_correctes') or ''
+                            corr_list = parse_correct_answers(corr_raw)
+                            if corr_list:
+                                st.markdown(f"- **Bonne(s) réponse(s):** {', '.join([f'{c}) {options_dict.get(c,\"\")}' for c in corr_list])}")
+                            else:
+                                st.markdown(f"- **Bonne(s) réponse(s):** Non spécifiée")
+                            st.write("---")
+                    else:
+                        st.info("Aucune réponse détaillée trouvée pour ce résultat.")
+        else:
+            st.info("Aucun résultat pour le moment.")
     
     # ========== SÉRIES ==========
     with admin_tabs[1]:
         st.subheader("📚 Gestion des Séries")
         
         with st.expander("➕ Créer une nouvelle série"):
-            nom = st.text_input("Nom de la série")
+            nom = st.text_input("Nom")
             desc = st.text_area("Description")
             if st.button("Créer la série", use_container_width=True, type="primary"):
                 if nom:
@@ -1307,8 +1513,8 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             with col1:
                 st.markdown(f"""
                 <div class="card">
-                    <h3>{s['nom']}</h3>
-                    <p style="color: #666;">{s['description']}</p>
+                    <h3>{s.get('nom','')}</h3>
+                    <p style="color: #666;">{s.get('description','')}</p>
                     <small style="color: #999;">🎯 {quiz_count} quizzes</small>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1328,7 +1534,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         if series:
             selected_series = st.selectbox(
                 "Sélectionner une série",
-                [(s['id'], s['nom']) for s in series],
+                [(s['id'], s.get('nom','')) for s in series],
                 format_func=lambda x: x[1]
             )
             
@@ -1343,13 +1549,13 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 with col1:
                     st.markdown(f"""
                     <div class="card">
-                        <strong>Q{idx}: {q['question']}</strong>
+                        <strong>Q{idx}: {q.get('question','')}</strong>
                         <small style="display: block; margin-top: 10px; color: #666;">
-                            A) {q['option_a']}<br>
-                            B) {q['option_b']}<br>
-                            C) {q['option_c']}<br>
-                            D) {q['option_d']}<br>
-                            <strong style="color: #667eea;">Réponse(s): {q['reponses_correctes']}</strong>
+                            A) {q.get('option_a','')}<br>
+                            B) {q.get('option_b','')}<br>
+                            C) {q.get('option_c','')}<br>
+                            D) {q.get('option_d','')}<br>
+                            <strong style="color: #667eea;">Réponse(s): {q.get('reponses_correctes','')}</strong>
                         </small>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1370,14 +1576,14 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.markdown("### ✏️ Éditer ce quiz")
                     
                     with st.form("edit_form"):
-                        new_q = st.text_input("Question", value=q['question'])
-                        new_a = st.text_input("Option A", value=q['option_a'])
-                        new_b = st.text_input("Option B", value=q['option_b'])
-                        new_c = st.text_input("Option C", value=q['option_c'])
-                        new_d = st.text_input("Option D", value=q['option_d'])
+                        new_q = st.text_input("Question", value=q.get('question',''))
+                        new_a = st.text_input("Option A", value=q.get('option_a',''))
+                        new_b = st.text_input("Option B", value=q.get('option_b',''))
+                        new_c = st.text_input("Option C", value=q.get('option_c',''))
+                        new_d = st.text_input("Option D", value=q.get('option_d',''))
                         new_correct = st.multiselect("Réponses correctes", ["A", "B", "C", "D"],
-                            default=q['reponses_correctes'].split(","))
-                        new_expl = st.text_area("Explication", value=q['explication'])
+                            default=parse_correct_answers(q.get('reponses_correctes','')))
+                        new_expl = st.text_area("Explication", value=q.get('explication',''))
                         
                         if st.form_submit_button("💾 Sauvegarder"):
                             db.q('UPDATE quiz SET question=?,option_a=?,option_b=?,option_c=?,option_d=?,reponses_correctes=?,explication=? WHERE id=?',
@@ -1405,7 +1611,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 if series_list:
                     sel_series = st.selectbox(
                         "Ajouter à quelle série?",
-                        [(s['id'], s['nom']) for s in series_list],
+                        [(s['id'], s.get('nom','')) for s in series_list],
                         format_func=lambda x: x[1]
                     )
                     
@@ -1413,8 +1619,8 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                         count = 0
                         for _, row in edited_df.iterrows():
                             db.q('INSERT INTO quiz (series_id,question,option_a,option_b,option_c,option_d,reponses_correctes,explication) VALUES (?,?,?,?,?,?,?,?)',
-                                (sel_series[0], row['question'], row['a'], row['b'], row['c'], row['d'],
-                                 row['reponses_correctes'], row['explication']))
+                                (sel_series[0], row.get('question',''), row.get('a',''), row.get('b',''), row.get('c',''), row.get('d',''),
+                                 row.get('reponses_correctes',''), row.get('explication','')))
                             count += 1
                         st.success(f"✅ {count} quizzes importés!")
                         st.rerun()
@@ -1433,10 +1639,10 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         with col1:
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Total</div><div class="stat-number">{len(users)}</div></div>', unsafe_allow_html=True)
         with col2:
-            active = len([u for u in users if u['status'] == 'actif'])
+            active = len([u for u in users if u.get('status') == 'actif'])
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Actifs</div><div class="stat-number">{active}</div></div>', unsafe_allow_html=True)
         with col3:
-            blocked = len([u for u in users if u['status'] == 'bloqué'])
+            blocked = len([u for u in users if u.get('status') == 'bloqué'])
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Bloqués</div><div class="stat-number">{blocked}</div></div>', unsafe_allow_html=True)
         
         st.write("---")
@@ -1445,21 +1651,21 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             
             with col1:
-                icon = "✅" if u['status'] == 'actif' else "🔒"
-                st.markdown(f"**{icon} {u['prenom']} {u['nom']}**")
-                st.caption(f"📧 {u['email']}")
+                icon = "✅" if u.get('status') == 'actif' else "🔒"
+                st.markdown(f"**{icon} {u.get('prenom','')} {u.get('nom','')}**")
+                st.caption(f"📧 {u.get('email','')}")
             
             with col2:
-                if st.button("🔒 Bloquer" if u['status'] == 'actif' else "✅ Débloquer", 
+                if st.button("🔒 Bloquer" if u.get('status') == 'actif' else "✅ Débloquer", 
                             key=f"block_{u['id']}", use_container_width=True):
-                    new_status = 'bloqué' if u['status'] == 'actif' else 'actif'
+                    new_status = 'bloqué' if u.get('status') == 'actif' else 'actif'
                     db.q('UPDATE utilisateurs SET status=? WHERE id=?', (new_status, u['id']))
                     st.rerun()
             
             with col3:
-                new_dur = st.number_input("Min", 5, 1440, u['session_minutes'], 
+                new_dur = st.number_input("Min", 5, 1440, int(u.get('session_minutes',120)), 
                                          key=f"dur_{u['id']}", step=1)
-                if new_dur != u['session_minutes']:
+                if new_dur != int(u.get('session_minutes',120)):
                     db.q('UPDATE utilisateurs SET session_minutes=? WHERE id=?', (new_dur, u['id']))
                     st.rerun()
             
@@ -1504,14 +1710,14 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             col1, col2, col3 = st.columns([2, 1, 1])
             
             with col1:
-                icon = "✅" if admin['status'] == 'actif' else "🔒"
-                st.markdown(f"**{icon} {admin['prenom']} {admin['nom']}**")
-                st.caption(f"📧 {admin['email']}")
+                icon = "✅" if admin.get('status') == 'actif' else "🔒"
+                st.markdown(f"**{icon} {admin.get('prenom','')} {admin.get('nom','')}**")
+                st.caption(f"📧 {admin.get('email','')}")
             
             with col2:
-                if st.button("🔒" if admin['status'] == 'actif' else "✅", 
+                if st.button("🔒" if admin.get('status') == 'actif' else "✅", 
                             key=f"admin_block_{admin['id']}", use_container_width=True):
-                    new_status = 'bloqué' if admin['status'] == 'actif' else 'actif'
+                    new_status = 'bloqué' if admin.get('status') == 'actif' else 'actif'
                     db.q('UPDATE admins SET status=? WHERE id=?', (new_status, admin['id']))
                     st.rerun()
             
@@ -1585,10 +1791,10 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 with col1:
                     st.markdown(f"""
                     <div class="card">
-                        <strong>{fb['titre']}</strong> - {fb['type']}<br>
-                        <small>📧 {fb['email']}</small><br>
-                        <p style="margin-top: 10px;">{fb['message']}</p>
-                        <small style="color: #999;">📅 {fb['date_feedback']}</small>
+                        <strong>{fb.get('titre','')}</strong> - {fb.get('type','')}<br>
+                        <small>📧 {fb.get('email','')}</small><br>
+                        <p style="margin-top: 10px;">{fb.get('message','')}</p>
+                        <small style="color: #999;">📅 {fb.get('date_feedback')}</small>
                     </div>
                     """, unsafe_allow_html=True)
                 
