@@ -1071,10 +1071,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         else:
             st.info("ℹ️ Aucun quiz disponible pour le moment. Revenez bientôt!")
         
-        # Quiz Display
-        for s in series:
-            if st.session_state.page == f"quiz_{s['id']}" and st.session_state.current_quizzes:
-                quizzes = st.session_state.current_quizzes
                 
                 st.markdown(f"""
                 <div class="header-main" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); text-align: center;">
@@ -1151,31 +1147,213 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             st.session_state.quiz_submitted = True
                             st.session_state.page = f"results_{s['id']}"
                             st.rerun()
-                
-                # Results Page - AFFICHAGE DES CORRECTIONS
-                if st.session_state.page == f"results_{s['id']}" and st.session_state.quiz_submitted:
-                    score, percentage = display_correction(quizzes, st.session_state.quiz_answers, s)
-                    
-                    st.write("")
-                    st.write("---")
-                    st.write("")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("🔄 Recommencer ce quiz", use_container_width=True):
-                            st.session_state.page = f"quiz_{s['id']}"
-                            st.session_state.quiz_answers = {}
-                            st.session_state.quiz_submitted = False
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("📚 Choisir une autre série", use_container_width=True):
-                            st.session_state.page = "home"
-                            st.session_state.quiz_answers = {}
-                            st.session_state.quiz_submitted = False
-                            st.session_state.current_quizzes = []
-                            st.rerun()
-    
+                # ================= QUIZ ET RESULTATS =================
+for s in series:
+
+    # =====================================================
+    # PAGE QUIZ
+    # =====================================================
+    if st.session_state.page == f"quiz_{s['id']}":
+
+        quizzes = st.session_state.current_quizzes
+
+        st.markdown(f"""
+        <div class="header-main"
+             style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    text-align: center;">
+            <h2>📖 {s['nom']}</h2>
+            <p>{s['description']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if quizzes:
+
+            # ================= PROGRESSION =================
+            progress = len(st.session_state.quiz_answers) / len(quizzes)
+
+            st.markdown(f"""
+            <div class="progress-container">
+
+                <div style="display:flex;
+                            justify-content:space-between;">
+
+                    <span style="font-weight:700;
+                                 color:#667eea;">
+                        Progression : {int(progress*100)}%
+                    </span>
+
+                    <span style="color:#999;">
+                        {len(st.session_state.quiz_answers)}/{len(quizzes)} répondu(e)s
+                    </span>
+                </div>
+
+                <div class="progress-bar">
+                    <div class="progress-fill"
+                         style="width:{progress*100}%">
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.write("")
+
+            # ================= QUESTIONS =================
+            for idx, q in enumerate(quizzes, 1):
+
+                st.markdown(f"""
+                <div class="question-box">
+                    <div class="question-number">
+                        Question {idx}/{len(quizzes)}
+                    </div>
+
+                    <div class="question-text">
+                        {q['question']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                options = ["A", "B", "C", "D"]
+
+                option_texts = [
+                    q['option_a'],
+                    q['option_b'],
+                    q['option_c'],
+                    q['option_d']
+                ]
+
+                selected = st.radio(
+                    "Sélectionnez votre réponse",
+                    options,
+                    format_func=lambda x:
+                        f"{x}) {option_texts[ord(x)-65]}",
+                    key=f"q_{q['id']}",
+                    label_visibility="collapsed"
+                )
+
+                st.session_state.quiz_answers[q['id']] = selected
+
+                st.write("")
+
+            st.write("---")
+
+            col1, col2 = st.columns(2)
+
+            # ================= RETOUR =================
+            with col1:
+
+                if st.button(
+                    "⬅️ Retour",
+                    use_container_width=True
+                ):
+
+                    st.session_state.page = "home"
+                    st.session_state.quiz_answers = {}
+                    st.session_state.quiz_submitted = False
+                    st.session_state.current_quizzes = []
+
+                    st.rerun()
+
+            # ================= SOUMISSION =================
+            with col2:
+
+                if st.button(
+                    "✅ Soumettre les réponses",
+                    use_container_width=True,
+                    type="primary"
+                ):
+
+                    score = 0
+
+                    for q in quizzes:
+
+                        user_answer = st.session_state.quiz_answers.get(q['id'])
+
+                        correct_answers = [
+                            x.strip()
+                            for x in q['reponses_correctes'].split(',')
+                        ]
+
+                        if user_answer in correct_answers:
+                            score += 1
+
+                    percentage = (
+                        score / len(quizzes)
+                    ) * 100
+
+                    # ================= SAUVEGARDE RESULTAT =================
+                    db.q(
+                        '''INSERT INTO resultats
+                        (utilisateur_id,series_id,score,total,pourcentage)
+                        VALUES (?,?,?,?,?)''',
+                        (
+                            st.session_state.user['id'],
+                            s['id'],
+                            score,
+                            len(quizzes),
+                            percentage
+                        )
+                    )
+
+                    # IMPORTANT
+                    st.session_state.current_quizzes = quizzes
+                    st.session_state.quiz_submitted = True
+
+                    # REDIRECTION RESULTATS
+                    st.session_state.page = f"results_{s['id']}"
+
+                    st.rerun()
+
+
+    # =====================================================
+    # PAGE RESULTATS
+    # =====================================================
+    elif st.session_state.page == f"results_{s['id']}":
+
+        quizzes = st.session_state.current_quizzes
+
+        if quizzes:
+
+            # ================= AFFICHAGE CORRECTION =================
+            score, percentage = display_correction(
+                quizzes,
+                st.session_state.quiz_answers,
+                s
+            )
+
+            st.write("")
+            st.write("---")
+            st.write("")
+
+            col1, col2 = st.columns(2)
+
+            # ================= RECOMMENCER =================
+            with col1:
+
+                if st.button(
+                    "🔄 Recommencer ce quiz",
+                    use_container_width=True
+                ):
+
+                    st.session_state.page = f"quiz_{s['id']}"
+                    st.session_state.quiz_answers = {}
+                    st.session_state.quiz_submitted = False
+
+                    st.rerun()
+
+            # ================= RETOUR ACCUEIL =================
+            with col2:
+
+                if st.button(
+                    "📚 Choisir une autre série",
+                    use_container_width=True
+                ):
+
+                    st.session_state.page = "home"
+                    st.session_state.quiz_answers = {}
+                    st.session_state.quiz_submitted = False
+                    st.session_state.current_quizzes = []
+
+                    st.rerun()
     # ========== TAB 2: RÉSULTATS ==========
     with tab2:
         st.subheader("📊 Votre historique de résultats")
