@@ -787,7 +787,7 @@ def display_correction(quizzes, quiz_answers, serie):
     # Calculer le score et collecter les détails
     for q in quizzes:
         user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        correct_answers = q['reponses_correctes'].split(",")
+        correct_answers = [     x.strip()     for x in q['reponses_correctes'].split(",") ]
         is_correct = user_answer in correct_answers
         
         if is_correct:
