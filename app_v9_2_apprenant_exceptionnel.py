@@ -14,6 +14,8 @@ import hashlib
 from datetime import datetime, timedelta
 import os
 from base64 import b64encode
+import re
+import html
 
 st.set_page_config(
     page_title="Campus Réussite v9.2",
@@ -759,6 +761,20 @@ if "correction_data" not in st.session_state:
 check_session_timeout()
 update_activity()
 
+# ========== HELPERS POUR NETTOYAGE HTML ==========
+def clean_text(s):
+    """Supprime les balises HTML et dés-escape les entités pour affichage propre."""
+    if s is None:
+        return ""
+    # Convert to string
+    txt = str(s)
+    # Unescape HTML entities (&amp; etc.)
+    txt = html.unescape(txt)
+    # Remove HTML tags
+    txt = re.sub(r'<[^>]+>', '', txt)
+    # Trim whitespace
+    return txt.strip()
+
 # ========== HELPER FUNCTIONS ==========
 def display_logo():
     """Affiche le logo de manière dynamique et professionnelle"""
@@ -785,39 +801,54 @@ def display_correction(quizzes, quiz_answers, serie):
     
     # Calculer le score et collecter les détails
     for q in quizzes:
+        # Nettoyer les textes pour affichage (supprime balises HTML si présentes)
+        question_text = clean_text(q.get('question', ''))
+        explication_text = clean_text(q.get('explication', ''))
+        option_a = clean_text(q.get('option_a', ''))
+        option_b = clean_text(q.get('option_b', ''))
+        option_c = clean_text(q.get('option_c', ''))
+        option_d = clean_text(q.get('option_d', ''))
+        
+        # Normaliser les réponses correctes
+        raw_correct = q.get('reponses_correctes') or ""
+        correct_answers = [x.strip().upper() for x in raw_correct.split(",") if x.strip()]
+        
         user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        correct_answers = q['reponses_correctes'].split(",")
-        is_correct = user_answer in correct_answers
+        is_correct = False
+        if user_answer != 'Non répondu':
+            if user_answer.strip().upper() in correct_answers:
+                is_correct = True
         
         if is_correct:
             score += 1
         
         details.append({
-            'question': q['question'],
+            'question': question_text,
             'user_answer': user_answer,
             'correct_answers': correct_answers,
-            'option_a': q['option_a'],
-            'option_b': q['option_b'],
-            'option_c': q['option_c'],
-            'option_d': q['option_d'],
-            'explication': q['explication'],
+            'option_a': option_a,
+            'option_b': option_b,
+            'option_c': option_c,
+            'option_d': option_d,
+            'explication': explication_text,
             'is_correct': is_correct,
             'options_dict': {
-                'A': q['option_a'],
-                'B': q['option_b'],
-                'C': q['option_c'],
-                'D': q['option_d']
+                'A': option_a,
+                'B': option_b,
+                'C': option_c,
+                'D': option_d
             }
         })
     
-    percentage = (score / len(quizzes)) * 100
+    total_questions = len(quizzes) if len(quizzes) > 0 else 1
+    percentage = (score / total_questions) * 100
     color_type, message, color_code = get_score_color(percentage)
     
     # HEADER DES CORRECTIONS
     st.markdown(f"""
     <div class="correction-header">
         <h2>📋 Votre Correction Détaillée</h2>
-        <p>{serie['nom']}</p>
+        <p>{clean_text(serie.get('nom', ''))}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -862,6 +893,7 @@ def display_correction(quizzes, quiz_answers, serie):
         status_badge = "✅ Correct" if detail['is_correct'] else "❌ Incorrect"
         status_color = "correct" if detail['is_correct'] else "incorrect"
         
+        # Affiche l'encadré principal (question)
         st.markdown(f"""
         <div class="{status_class}">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -877,11 +909,12 @@ def display_correction(quizzes, quiz_answers, serie):
         
         # Réponse de l'utilisateur
         if detail['user_answer'] != 'Non répondu':
-            user_option_text = detail['options_dict'].get(detail['user_answer'], 'Non trouvé')
+            ua = detail['user_answer'].strip().upper()
+            user_option_text = detail['options_dict'].get(ua, 'Non trouvé')
             st.markdown(f"""
             <div class="correction-row user">
                 <span class="correction-label">👤 Votre réponse:</span>
-                <span class="correction-text"><strong>{detail['user_answer']}</strong>) {user_option_text}</span>
+                <span class="correction-text"><strong>{ua}</strong>) {user_option_text}</span>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -892,23 +925,25 @@ def display_correction(quizzes, quiz_answers, serie):
             </div>
             """, unsafe_allow_html=True)
         
-        # Réponses correctes
+        # Réponses correctes (affiche toutes les bonnes réponses)
         for correct_ans in detail['correct_answers']:
-            correct_option_text = detail['options_dict'].get(correct_ans, 'Non trouvé')
+            ca = correct_ans.strip().upper()
+            correct_option_text = detail['options_dict'].get(ca, 'Non trouvé')
             st.markdown(f"""
             <div class="correction-row correct-answer">
                 <span class="correction-label">✅ Bonne réponse:</span>
-                <span class="correction-text"><strong>{correct_ans}</strong>) {correct_option_text}</span>
+                <span class="correction-text"><strong>{ca}</strong>) {correct_option_text}</span>
             </div>
             """, unsafe_allow_html=True)
         
         # Explication
-        st.markdown(f"""
-        <div class="correction-explication">
-            <div class="explication-label">💡 Explication:</div>
-            {detail['explication']}
-        </div>
-        """, unsafe_allow_html=True)
+        if detail['explication']:
+            st.markdown(f"""
+            <div class="correction-explication">
+                <div class="explication-label">💡 Explication:</div>
+                {detail['explication']}
+            </div>
+            """, unsafe_allow_html=True)
         
         st.divider()
     
@@ -1101,16 +1136,18 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     
                     # Questions
                     for idx, q in enumerate(quizzes, 1):
+                        # Clean question for quiz display as well
+                        q_text = clean_text(q.get('question', ''))
                         st.markdown(f"""
                         <div class="question-box">
                             <div class="question-number">Question {idx}/{len(quizzes)}</div>
-                            <div class="question-text">{q['question']}</div>
+                            <div class="question-text">{q_text}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
                         # Options
                         options = ["A", "B", "C", "D"]
-                        option_texts = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
+                        option_texts = [clean_text(q.get('option_a', '')), clean_text(q.get('option_b', '')), clean_text(q.get('option_c', '')), clean_text(q.get('option_d', ''))]
                         
                         selected = st.radio(
                             "Sélectionnez votre réponse:",
@@ -1140,10 +1177,12 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             score = 0
                             for q in quizzes:
                                 if q['id'] in st.session_state.quiz_answers:
-                                    if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
+                                    user_ans = st.session_state.quiz_answers[q['id']].strip().upper()
+                                    corrects = [x.strip().upper() for x in (q.get('reponses_correctes') or "").split(",") if x.strip()]
+                                    if user_ans in corrects:
                                         score += 1
                             
-                            percentage = (score / len(quizzes)) * 100
+                            percentage = (score / len(quizzes)) * 100 if len(quizzes) > 0 else 0
                             db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage) VALUES (?,?,?,?,?)',
                                 (st.session_state.user['id'], s['id'], score, len(quizzes), percentage))
                             
