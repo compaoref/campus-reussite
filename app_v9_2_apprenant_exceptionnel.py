@@ -1,8 +1,7 @@
-# (Fichier complet - app_v9_2_apprenant_exceptionnel.py)
 """
 🎓 CAMPUS RÉUSSITE v9.2 - PAGE APPRENANT EXCEPTIONNELLE
 ✨ Corrections Magnifiques et Dynamiques
-✅ Logo Intégré Professionnellement
+✅ Logo Intégré Profesionnellement
 ✅ Bug Fixes pour Affichage Corrections
 ✅ Expérience Apprenant INCROYABLE
 """
@@ -152,7 +151,7 @@ st.markdown("""
         border-top: 2px solid rgba(255,255,255,0.2);
     }
     
-    /* QUESTION BOX (CSS conservé pour les autres usages visuels) */
+    /* QUESTION BOX */
     .question-box {
         background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
         padding: 30px;
@@ -790,18 +789,10 @@ def display_logo():
                 with open(LOGO_URL, "rb") as f:
                     data = f.read()
                 encoded = b64encode(data).decode()
-                # Détecter le type simple à partir de l'extension
-                ext = os.path.splitext(LOGO_URL)[1].lower()
-                mime = "image/png"
-                if ext in [".jpg", ".jpeg"]:
-                    mime = "image/jpeg"
-                elif ext in [".svg"]:
-                    mime = "image/svg+xml"
-                elif ext in [".gif"]:
-                    mime = "image/gif"
+                # On suppose png; si votre logo est un autre format, adaptez le MIME type.
                 st.markdown(f"""
                 <div class="logo-container">
-                    <img src="data:{mime};base64,{encoded}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
+                    <img src="data:image/png;base64,{encoded}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
                 </div>
                 """, unsafe_allow_html=True)
                 return
@@ -1161,7 +1152,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 
                 if quizzes:
                     # Progress bar
-                    progress = len(st.session_state.quiz_answers) / len(quizzes) if len(quizzes) > 0 else 0
+                    progress = len(st.session_state.quiz_answers) / len(quizzes)
                     st.markdown(f"""
                     <div class="progress-container">
                         <div style="display: flex; justify-content: space-between;">
@@ -1176,10 +1167,12 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     
                     st.write("")
                     
-                    # Questions - affichage soigné (numéro + texte, rendu Markdown)
+                    # Questions
                     for idx, q in enumerate(quizzes, 1):
+                        # Clean question for quiz display as well
                         q_text = clean_text(q.get('question', ''))
-                        st.markdown(f"**Question {idx}/{len(quizzes)}**  \n\n### {q_text}")
+                        # Affichage simplifié : seulement le texte de la question (sans <div> ni HTML)
+                        st.markdown(q_text)
                         
                         # Options
                         options = ["A", "B", "C", "D"]
@@ -1193,7 +1186,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             label_visibility="collapsed"
                         )
                         
-                        # Enregistrer la réponse sélectionnée
                         st.session_state.quiz_answers[q['id']] = selected
                         st.write("")
                     
