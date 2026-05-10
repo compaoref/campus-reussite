@@ -25,8 +25,7 @@ DB_PATH = "campus.db"
 
 # ========== CONFIGURATION LOGO ==========
 # À modifier: mettez l'URL ou le chemin de votre logo
-LOGO_URL = "https://via.placeholder.com/150/667eea/ffffff?text=Campus"  # À remplacer par votre logo!
-# Si vous avez un logo local: LOGO_PATH = "logo.png"
+LOGO_URL = "logo.png"  # Votre logo local
 
 # ========== CSS EXTRAORDINAIRE ==========
 st.markdown("""
@@ -778,10 +777,6 @@ def get_score_color(percentage):
     else:
         return "red", "💪 Continuez vos efforts!", "#ef4444"
 
-def format_correct_answers(options_dict, corr_list):
-    """Formate la liste des bonnes réponses en une chaîne 'A) texte, B) texte' sans échappements."""
-    return ", ".join([f"{c}) {options_dict.get(c, '')}" for c in corr_list])
-
 def display_correction(quizzes, quiz_answers, serie):
     """Affiche les corrections de manière spectaculaire et dynamique"""
     
@@ -791,7 +786,7 @@ def display_correction(quizzes, quiz_answers, serie):
     # Calculer le score et collecter les détails
     for q in quizzes:
         user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        correct_answers = [c.strip() for c in q['reponses_correctes'].split(",") if c.strip()]
+        correct_answers = q['reponses_correctes'].split(",")
         is_correct = user_answer in correct_answers
         
         if is_correct:
@@ -815,7 +810,7 @@ def display_correction(quizzes, quiz_answers, serie):
             }
         })
     
-    percentage = (score / len(quizzes)) * 100 if quizzes else 0
+    percentage = (score / len(quizzes)) * 100
     color_type, message, color_code = get_score_color(percentage)
     
     # HEADER DES CORRECTIONS
@@ -897,15 +892,15 @@ def display_correction(quizzes, quiz_answers, serie):
             </div>
             """, unsafe_allow_html=True)
         
-        # Réponses correctes (formatées en une seule ligne pour éviter les échappements problématiques)
-        corr_list = detail['correct_answers']
-        corr_text = format_correct_answers(detail['options_dict'], corr_list)
-        st.markdown(f"""
-        <div class="correction-row correct-answer">
-            <span class="correction-label">✅ Bonne réponse(s):</span>
-            <span class="correction-text"><strong>{corr_text}</strong></span>
-        </div>
-        """, unsafe_allow_html=True)
+        # Réponses correctes
+        for correct_ans in detail['correct_answers']:
+            correct_option_text = detail['options_dict'].get(correct_ans, 'Non trouvé')
+            st.markdown(f"""
+            <div class="correction-row correct-answer">
+                <span class="correction-label">✅ Bonne réponse:</span>
+                <span class="correction-text"><strong>{correct_ans}</strong>) {correct_option_text}</span>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Explication
         st.markdown(f"""
@@ -1089,7 +1084,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 
                 if quizzes:
                     # Progress bar
-                    progress = len(st.session_state.quiz_answers) / len(quizzes) if len(quizzes) else 0
+                    progress = len(st.session_state.quiz_answers) / len(quizzes)
                     st.markdown(f"""
                     <div class="progress-container">
                         <div style="display: flex; justify-content: space-between;">
@@ -1145,19 +1140,19 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             score = 0
                             for q in quizzes:
                                 if q['id'] in st.session_state.quiz_answers:
-                                    if st.session_state.quiz_answers[q['id']] in [c.strip() for c in q['reponses_correctes'].split(",")]:
+                                    if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
                                         score += 1
                             
-                            percentage = (score / len(quizzes)) * 100 if len(quizzes) else 0
+                            percentage = (score / len(quizzes)) * 100
                             db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage) VALUES (?,?,?,?,?)',
                                 (st.session_state.user['id'], s['id'], score, len(quizzes), percentage))
                             
                             st.session_state.quiz_submitted = True
-                            st.session_state.page = f"results_{s['id']}"
+                            st.session_state.current_series_id = s['id']
                             st.rerun()
                 
                 # Results Page - AFFICHAGE DES CORRECTIONS
-                if st.session_state.page == f"results_{s['id']}" and st.session_state.quiz_submitted:
+                if st.session_state.quiz_submitted and st.session_state.current_series_id == s['id']:
                     score, percentage = display_correction(quizzes, st.session_state.quiz_answers, s)
                     
                     st.write("")
