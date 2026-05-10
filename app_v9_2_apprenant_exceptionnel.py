@@ -1,7 +1,8 @@
+# (Fichier complet - app_v9_2_apprenant_exceptionnel.py)
 """
 🎓 CAMPUS RÉUSSITE v9.2 - PAGE APPRENANT EXCEPTIONNELLE
 ✨ Corrections Magnifiques et Dynamiques
-✅ Logo Intégré Profesionnellement
+✅ Logo Intégré Professionnellement
 ✅ Bug Fixes pour Affichage Corrections
 ✅ Expérience Apprenant INCROYABLE
 """
@@ -151,7 +152,7 @@ st.markdown("""
         border-top: 2px solid rgba(255,255,255,0.2);
     }
     
-    /* QUESTION BOX */
+    /* QUESTION BOX (CSS conservé pour les autres usages visuels) */
     .question-box {
         background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
         padding: 30px;
@@ -777,12 +778,53 @@ def clean_text(s):
 
 # ========== HELPER FUNCTIONS ==========
 def display_logo():
-    """Affiche le logo de manière dynamique et professionnelle"""
-    st.markdown(f"""
-    <div class="logo-container">
-        <img src="{LOGO_URL}" alt="Campus Réussite Logo">
-    </div>
-    """, unsafe_allow_html=True)
+    """Affiche le logo en essayant plusieurs méthodes robustes :
+       1) embed base64 depuis le fichier local si présent
+       2) st.image() (prend en charge chemin local ou URL)
+       3) raw GitHub URL (utiliser si vous voulez charger depuis le repo)
+    """
+    try:
+        # Option: chemin local (fichier dans le même dossier que le script)
+        if os.path.exists(LOGO_URL):
+            try:
+                with open(LOGO_URL, "rb") as f:
+                    data = f.read()
+                encoded = b64encode(data).decode()
+                # Détecter le type simple à partir de l'extension
+                ext = os.path.splitext(LOGO_URL)[1].lower()
+                mime = "image/png"
+                if ext in [".jpg", ".jpeg"]:
+                    mime = "image/jpeg"
+                elif ext in [".svg"]:
+                    mime = "image/svg+xml"
+                elif ext in [".gif"]:
+                    mime = "image/gif"
+                st.markdown(f"""
+                <div class="logo-container">
+                    <img src="data:{mime};base64,{encoded}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
+                </div>
+                """, unsafe_allow_html=True)
+                return
+            except Exception:
+                pass
+
+        # Option fallback 1: st.image() (accepte URL ou chemin)
+        try:
+            st.image(LOGO_URL, width=120)
+            return
+        except Exception:
+            pass
+
+        # Option fallback 2: raw GitHub URL (basé sur votre repo et CommitOID)
+        RAW_GITHUB_LOGO = "https://raw.githubusercontent.com/compaoref/campus-reussite/98ed57e840b206830163cbf54f5b0ba910c9df49/logo.png"
+        st.markdown(f"""
+        <div class="logo-container">
+            <img src="{RAW_GITHUB_LOGO}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
+        </div>
+        """, unsafe_allow_html=True)
+    except Exception:
+        # Silence en UI si tout échoue
+        pass
 
 def get_score_color(percentage):
     """Retourne la couleur basée sur le pourcentage"""
@@ -1119,7 +1161,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 
                 if quizzes:
                     # Progress bar
-                    progress = len(st.session_state.quiz_answers) / len(quizzes)
+                    progress = len(st.session_state.quiz_answers) / len(quizzes) if len(quizzes) > 0 else 0
                     st.markdown(f"""
                     <div class="progress-container">
                         <div style="display: flex; justify-content: space-between;">
@@ -1134,16 +1176,10 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     
                     st.write("")
                     
-                    # Questions
+                    # Questions - affichage soigné (numéro + texte, rendu Markdown)
                     for idx, q in enumerate(quizzes, 1):
-                        # Clean question for quiz display as well
                         q_text = clean_text(q.get('question', ''))
-                        st.markdown(f"""
-                        <div class="question-box">
-                            <div class="question-number">Question {idx}/{len(quizzes)}</div>
-                            <div class="question-text">{q_text}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"**Question {idx}/{len(quizzes)}**  \n\n### {q_text}")
                         
                         # Options
                         options = ["A", "B", "C", "D"]
@@ -1157,6 +1193,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             label_visibility="collapsed"
                         )
                         
+                        # Enregistrer la réponse sélectionnée
                         st.session_state.quiz_answers[q['id']] = selected
                         st.write("")
                     
