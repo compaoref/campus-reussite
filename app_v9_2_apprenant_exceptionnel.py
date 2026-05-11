@@ -1598,58 +1598,81 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 st.markdown(f"<h4>📚 {len(quizzes)} quizzes</h4>", unsafe_allow_html=True)
                 
                 if quizzes:
-                    # TABLEAU PROFESSIONNEL
-                    table_html = """
-                    <table class="admin-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Question</th>
-                                <th>Réponse(s)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                    """
-                    
+                    # AFFICHAGE AVEC CARTES ET BOUTONS
                     for idx, q in enumerate(quizzes, 1):
-                        table_html += f"""
-                        <tr>
-                            <td><strong>{idx}</strong></td>
-                            <td>
-                                <strong>{q['question']}</strong><br>
-                                <small style="color: #666;">
-                                    A) {q['option_a']}<br>
-                                    B) {q['option_b']}<br>
-                                    C) {q['option_c']}<br>
-                                    D) {q['option_d']}
-                                </small>
-                            </td>
-                            <td><span style="color: #667eea; font-weight: 700;">{q['reponses_correctes']}</span></td>
-                        </tr>
-                        """
-                    
-                    table_html += """
-                        </tbody>
-                    </table>
-                    """
-                    
-                    st.markdown(table_html, unsafe_allow_html=True)
-                    
-                    st.divider()
-                    
-                    # Suppression individuelle
-                    st.markdown("<h4>🗑️ Supprimer un Quiz</h4>", unsafe_allow_html=True)
-                    quiz_to_delete = st.selectbox(
-                        "Sélectionner un quiz à supprimer",
-                        [(q['id'], f"Q{quizzes.index(q)+1}: {q['question'][:50]}...") for q in quizzes],
-                        format_func=lambda x: x[1],
-                        key="delete_quiz"
-                    )
-                    
-                    if st.button("🗑️ Supprimer ce Quiz", use_container_width=True, type="secondary"):
-                        db.q('DELETE FROM quiz WHERE id=?', (quiz_to_delete[0],))
-                        st.success("✅ Quiz supprimé!")
-                        st.rerun()
+                        col1, col2, col3 = st.columns([3, 0.5, 0.5])
+                        
+                        with col1:
+                            st.markdown(f"""
+                            <div class="admin-card">
+                                <strong>Q{idx}: {q['question']}</strong>
+                                <div style="margin-top: 15px; color: #666;">
+                                    <small>
+                                        A) {q['option_a']}<br>
+                                        B) {q['option_b']}<br>
+                                        C) {q['option_c']}<br>
+                                        D) {q['option_d']}
+                                    </small>
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <span style="color: #667eea; font-weight: 700; font-size: 0.9em;">✅ Réponse(s): {q['reponses_correctes']}</span>
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <small style="color: #999;">💡 {q['explication'][:80]}...</small>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col2:
+                            if st.button("✏️", key=f"edit_{q['id']}", help="Éditer", use_container_width=True):
+                                st.session_state.editing_quiz_id = q['id']
+                                st.rerun()
+                        
+                        with col3:
+                            if st.button("🗑️", key=f"del_{q['id']}", help="Supprimer", use_container_width=True):
+                                db.q('DELETE FROM quiz WHERE id=?', (q['id'],))
+                                st.success("✅ Quiz supprimé!")
+                                st.rerun()
+                        
+                        # Édition inline
+                        if st.session_state.editing_quiz_id == q['id']:
+                            st.divider()
+                            st.markdown(f"### ✏️ Éditer Q{idx}")
+                            
+                            with st.form(f"edit_form_{q['id']}", border=False):
+                                new_q = st.text_area("Question", value=q['question'], height=80)
+                                
+                                col_a, col_b, col_c, col_d = st.columns(4)
+                                with col_a:
+                                    new_a = st.text_input("Option A", value=q['option_a'])
+                                with col_b:
+                                    new_b = st.text_input("Option B", value=q['option_b'])
+                                with col_c:
+                                    new_c = st.text_input("Option C", value=q['option_c'])
+                                with col_d:
+                                    new_d = st.text_input("Option D", value=q['option_d'])
+                                
+                                new_correct = st.multiselect(
+                                    "Réponses correctes",
+                                    ["A", "B", "C", "D"],
+                                    default=q['reponses_correctes'].split(",")
+                                )
+                                
+                                new_expl = st.text_area("Explication", value=q['explication'], height=80)
+                                
+                                col_save, col_cancel = st.columns(2)
+                                with col_save:
+                                    if st.form_submit_button("💾 Sauvegarder", use_container_width=True, type="primary"):
+                                        db.q('UPDATE quiz SET question=?,option_a=?,option_b=?,option_c=?,option_d=?,reponses_correctes=?,explication=? WHERE id=?',
+                                            (new_q, new_a, new_b, new_c, new_d, ",".join(new_correct), new_expl, q['id']))
+                                        st.success("✅ Quiz modifié!")
+                                        st.session_state.editing_quiz_id = None
+                                        st.rerun()
+                                
+                                with col_cancel:
+                                    if st.form_submit_button("❌ Annuler", use_container_width=True):
+                                        st.session_state.editing_quiz_id = None
+                                        st.rerun()
                 else:
                     st.info("Aucun quiz dans cette série")
             
