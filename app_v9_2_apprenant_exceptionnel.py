@@ -14,8 +14,6 @@ import hashlib
 from datetime import datetime, timedelta
 import os
 from base64 import b64encode
-import re
-import html
 
 st.set_page_config(
     page_title="Campus Réussite v9.2",
@@ -761,61 +759,14 @@ if "correction_data" not in st.session_state:
 check_session_timeout()
 update_activity()
 
-# ========== HELPERS POUR NETTOYAGE HTML ==========
-def clean_text(s):
-    """Supprime les balises HTML et dés-escape les entités pour affichage propre."""
-    if s is None:
-        return ""
-    # Convert to string
-    txt = str(s)
-    # Unescape HTML entities (&amp; etc.)
-    txt = html.unescape(txt)
-    # Remove HTML tags
-    txt = re.sub(r'<[^>]+>', '', txt)
-    # Trim whitespace
-    return txt.strip()
-
 # ========== HELPER FUNCTIONS ==========
 def display_logo():
-    """Affiche le logo en essayant plusieurs méthodes robustes :
-       1) embed base64 depuis le fichier local si présent
-       2) st.image() (prend en charge chemin local ou URL)
-       3) raw GitHub URL (utiliser si vous voulez charger depuis le repo)
-    """
-    try:
-        # Option: chemin local (fichier dans le même dossier que le script)
-        if os.path.exists(LOGO_URL):
-            try:
-                with open(LOGO_URL, "rb") as f:
-                    data = f.read()
-                encoded = b64encode(data).decode()
-                # On suppose png; si votre logo est un autre format, adaptez le MIME type.
-                st.markdown(f"""
-                <div class="logo-container">
-                    <img src="data:image/png;base64,{encoded}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
-                </div>
-                """, unsafe_allow_html=True)
-                return
-            except Exception:
-                pass
-
-        # Option fallback 1: st.image() (accepte URL ou chemin)
-        try:
-            st.image(LOGO_URL, width=120)
-            return
-        except Exception:
-            pass
-
-        # Option fallback 2: raw GitHub URL (basé sur votre repo et CommitOID)
-        RAW_GITHUB_LOGO = "https://raw.githubusercontent.com/compaoref/campus-reussite/98ed57e840b206830163cbf54f5b0ba910c9df49/logo.png"
-        st.markdown(f"""
-        <div class="logo-container">
-            <img src="{RAW_GITHUB_LOGO}" alt="Campus Réussite Logo" style="height:120px;border-radius:15px;"/>
-        </div>
-        """, unsafe_allow_html=True)
-    except Exception:
-        # Silence en UI si tout échoue
-        pass
+    """Affiche le logo de manière dynamique et professionnelle"""
+    st.markdown(f"""
+    <div class="logo-container">
+        <img src="{LOGO_URL}" alt="Campus Réussite Logo">
+    </div>
+    """, unsafe_allow_html=True)
 
 def get_score_color(percentage):
     """Retourne la couleur basée sur le pourcentage"""
@@ -834,54 +785,39 @@ def display_correction(quizzes, quiz_answers, serie):
     
     # Calculer le score et collecter les détails
     for q in quizzes:
-        # Nettoyer les textes pour affichage (supprime balises HTML si présentes)
-        question_text = clean_text(q.get('question', ''))
-        explication_text = clean_text(q.get('explication', ''))
-        option_a = clean_text(q.get('option_a', ''))
-        option_b = clean_text(q.get('option_b', ''))
-        option_c = clean_text(q.get('option_c', ''))
-        option_d = clean_text(q.get('option_d', ''))
-        
-        # Normaliser les réponses correctes
-        raw_correct = q.get('reponses_correctes') or ""
-        correct_answers = [x.strip().upper() for x in raw_correct.split(",") if x.strip()]
-        
         user_answer = quiz_answers.get(q['id'], 'Non répondu')
-        is_correct = False
-        if user_answer != 'Non répondu':
-            if user_answer.strip().upper() in correct_answers:
-                is_correct = True
+        correct_answers = q['reponses_correctes'].split(",")
+        is_correct = user_answer in correct_answers
         
         if is_correct:
             score += 1
         
         details.append({
-            'question': question_text,
+            'question': q['question'],
             'user_answer': user_answer,
             'correct_answers': correct_answers,
-            'option_a': option_a,
-            'option_b': option_b,
-            'option_c': option_c,
-            'option_d': option_d,
-            'explication': explication_text,
+            'option_a': q['option_a'],
+            'option_b': q['option_b'],
+            'option_c': q['option_c'],
+            'option_d': q['option_d'],
+            'explication': q['explication'],
             'is_correct': is_correct,
             'options_dict': {
-                'A': option_a,
-                'B': option_b,
-                'C': option_c,
-                'D': option_d
+                'A': q['option_a'],
+                'B': q['option_b'],
+                'C': q['option_c'],
+                'D': q['option_d']
             }
         })
     
-    total_questions = len(quizzes) if len(quizzes) > 0 else 1
-    percentage = (score / total_questions) * 100
+    percentage = (score / len(quizzes)) * 100
     color_type, message, color_code = get_score_color(percentage)
     
     # HEADER DES CORRECTIONS
     st.markdown(f"""
     <div class="correction-header">
         <h2>📋 Votre Correction Détaillée</h2>
-        <p>{clean_text(serie.get('nom', ''))}</p>
+        <p>{serie['nom']}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -918,67 +854,147 @@ def display_correction(quizzes, quiz_answers, serie):
     </div>
     """, unsafe_allow_html=True)
     
-    # CORRECTIONS DÉTAILLÉES
-    st.markdown("<div style='margin-top: 40px;'><h3 style='color: #1a1a1a; font-size: 1.8em; margin-bottom: 25px;'>🔍 Détail de Vos Réponses</h3></div>", unsafe_allow_html=True)
+    # CORRECTIONS DÉTAILLÉES - NOUVELLE VERSION MAGNIFIQUE
+    st.markdown("<h3 style='color: #1a1a1a; font-size: 1.8em; margin: 40px 0 30px 0; font-weight: 700;'>🔍 Détail de Vos Réponses</h3>", unsafe_allow_html=True)
     
     for idx, detail in enumerate(details, 1):
-        status_class = "correction-item correct" if detail['is_correct'] else "correction-item incorrect"
-        status_badge = "✅ Correct" if detail['is_correct'] else "❌ Incorrect"
-        status_color = "correct" if detail['is_correct'] else "incorrect"
+        is_correct = detail['is_correct']
+        status_badge = "✅ CORRECT" if is_correct else "❌ INCORRECT"
+        badge_bg = "#d1fae5" if is_correct else "#fee2e2"
+        badge_color = "#065f46" if is_correct else "#7f1d1d"
+        border_color = "#10b981" if is_correct else "#ef4444"
         
-        # Affiche l'encadré principal (question)
+        # QUESTION HEADER
         st.markdown(f"""
-        <div class="{status_class}">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <div class="correction-question">Question {idx}/{len(details)}</div>
-                <span class="correction-status {status_color}">{status_badge}</span>
+        <div style="
+            background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+            border-left: 6px solid {border_color};
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0 15px 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                <div style="font-weight: 700; color: #667eea; font-size: 1em;">Question {idx}/{len(details)}</div>
+                <div style="
+                    background: {badge_bg};
+                    color: {badge_color};
+                    padding: 6px 16px;
+                    border-radius: 20px;
+                    font-weight: 700;
+                    font-size: 0.9em;
+                ">{status_badge}</div>
             </div>
-            
-            <div style="font-size: 1.2em; font-weight: 600; color: #1a1a1a; margin-bottom: 25px; line-height: 1.6;">
+            <div style="font-size: 1.3em; font-weight: 700; color: #1a1a1a; line-height: 1.6;">
                 {detail['question']}
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Réponse de l'utilisateur
-        if detail['user_answer'] != 'Non répondu':
-            ua = detail['user_answer'].strip().upper()
-            user_option_text = detail['options_dict'].get(ua, 'Non trouvé')
-            st.markdown(f"""
-            <div class="correction-row user">
-                <span class="correction-label">👤 Votre réponse:</span>
-                <span class="correction-text"><strong>{ua}</strong>) {user_option_text}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="correction-row user">
-                <span class="correction-label">👤 Votre réponse:</span>
-                <span class="correction-text" style="color: #ef4444;"><strong>Non répondu</strong></span>
-            </div>
-            """, unsafe_allow_html=True)
+        # COLONNES: VOTRE RÉPONSE ET BONNE RÉPONSE
+        col1, col2 = st.columns(2)
         
-        # Réponses correctes (affiche toutes les bonnes réponses)
-        for correct_ans in detail['correct_answers']:
-            ca = correct_ans.strip().upper()
-            correct_option_text = detail['options_dict'].get(ca, 'Non trouvé')
-            st.markdown(f"""
-            <div class="correction-row correct-answer">
-                <span class="correction-label">✅ Bonne réponse:</span>
-                <span class="correction-text"><strong>{ca}</strong>) {correct_option_text}</span>
-            </div>
-            """, unsafe_allow_html=True)
+        # VOTRE RÉPONSE
+        with col1:
+            if detail['user_answer'] != 'Non répondu':
+                user_option_text = detail['options_dict'].get(detail['user_answer'], 'Non trouvé')
+                border = "#ef4444" if not is_correct else "#10b981"
+                bg = "#fff5f5" if not is_correct else "#f0fdf4"
+                
+                st.markdown(f"""
+                <div style="
+                    background: {bg};
+                    border-left: 5px solid {border};
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin: 15px 0;
+                ">
+                    <div style="color: #667eea; font-weight: 700; margin-bottom: 10px; font-size: 0.95em;">👤 Votre réponse</div>
+                    <div style="
+                        background: white;
+                        padding: 15px;
+                        border-radius: 6px;
+                        border-left: 4px solid {border};
+                        font-weight: 600;
+                        color: #1a1a1a;
+                    ">
+                        <span style="font-size: 1.1em; font-weight: 700; color: {border};">{detail['user_answer']}</span>) {user_option_text}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="
+                    background: #fff5f5;
+                    border-left: 5px solid #ef4444;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin: 15px 0;
+                ">
+                    <div style="color: #667eea; font-weight: 700; margin-bottom: 10px; font-size: 0.95em;">👤 Votre réponse</div>
+                    <div style="
+                        background: white;
+                        padding: 15px;
+                        border-radius: 6px;
+                        color: #ef4444;
+                        font-weight: 700;
+                    ">
+                        Non répondu
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         
-        # Explication
-        if detail['explication']:
-            st.markdown(f"""
-            <div class="correction-explication">
-                <div class="explication-label">💡 Explication:</div>
+        # BONNE RÉPONSE
+        with col2:
+            for correct_ans in detail['correct_answers']:
+                correct_option_text = detail['options_dict'].get(correct_ans, 'Non trouvé')
+                st.markdown(f"""
+                <div style="
+                    background: #f0fdf4;
+                    border-left: 5px solid #10b981;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin: 15px 0;
+                ">
+                    <div style="color: #667eea; font-weight: 700; margin-bottom: 10px; font-size: 0.95em;">✅ Bonne réponse</div>
+                    <div style="
+                        background: white;
+                        padding: 15px;
+                        border-radius: 6px;
+                        border-left: 4px solid #10b981;
+                        font-weight: 600;
+                        color: #1a1a1a;
+                    ">
+                        <span style="font-size: 1.1em; font-weight: 700; color: #10b981;">{correct_ans}</span>) {correct_option_text}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # EXPLICATION EN PLEINE LARGEUR
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0 30px 0;
+            border-left: 5px solid #f59e0b;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
+        ">
+            <div style="
+                font-weight: 700;
+                color: #92400e;
+                margin-bottom: 12px;
+                font-size: 1.05em;
+            ">💡 Explication</div>
+            <div style="
+                color: #78350f;
+                line-height: 1.7;
+                font-size: 1em;
+            ">
                 {detail['explication']}
             </div>
-            """, unsafe_allow_html=True)
-        
-        st.divider()
+        </div>
+        """, unsafe_allow_html=True)
     
     return score, percentage
 
@@ -1169,14 +1185,16 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     
                     # Questions
                     for idx, q in enumerate(quizzes, 1):
-                        # Clean question for quiz display as well
-                        q_text = clean_text(q.get('question', ''))
-                        # Affichage simplifié : seulement le texte de la question (sans <div> ni HTML)
-                        st.markdown(q_text)
+                        st.markdown(f"""
+                        <div class="question-box">
+                            <div class="question-number">Question {idx}/{len(quizzes)}</div>
+                            <div class="question-text">{q['question']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         # Options
                         options = ["A", "B", "C", "D"]
-                        option_texts = [clean_text(q.get('option_a', '')), clean_text(q.get('option_b', '')), clean_text(q.get('option_c', '')), clean_text(q.get('option_d', ''))]
+                        option_texts = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
                         
                         selected = st.radio(
                             "Sélectionnez votre réponse:",
@@ -1206,12 +1224,10 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             score = 0
                             for q in quizzes:
                                 if q['id'] in st.session_state.quiz_answers:
-                                    user_ans = st.session_state.quiz_answers[q['id']].strip().upper()
-                                    corrects = [x.strip().upper() for x in (q.get('reponses_correctes') or "").split(",") if x.strip()]
-                                    if user_ans in corrects:
+                                    if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
                                         score += 1
                             
-                            percentage = (score / len(quizzes)) * 100 if len(quizzes) > 0 else 0
+                            percentage = (score / len(quizzes)) * 100
                             db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage) VALUES (?,?,?,?,?)',
                                 (st.session_state.user['id'], s['id'], score, len(quizzes), percentage))
                             
