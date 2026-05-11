@@ -531,6 +531,102 @@ st.markdown("""
         font-weight: 700;
         color: #1a1a1a;
     }
+    
+    /* BACKGROUND AVEC LOGO */
+    .logo-background {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: url('logo.png');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+        opacity: 0.06;
+        z-index: -1;
+        pointer-events: none;
+    }
+    
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+        z-index: 10;
+    }
+    
+    .logo-container img {
+        max-width: 180px;
+        height: auto;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* TABLEAU ADMIN */
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .admin-table th {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        text-align: left;
+        font-weight: 700;
+    }
+    
+    .admin-table td {
+        padding: 15px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .admin-table tr:hover {
+        background: #f5f5f5;
+    }
+    
+    /* CARD ADMIN */
+    .admin-card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-left: 5px solid #667eea;
+    }
+    
+    .admin-card h3 {
+        color: #667eea;
+        margin-bottom: 15px;
+    }
+    
+    /* STAT BOX ADMIN */
+    .stat-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        text-align: center;
+        margin: 15px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+        min-width: 150px;
+    }
+    
+    .stat-box-number {
+        font-size: 2.5em;
+        font-weight: 700;
+        margin: 10px 0;
+    }
+    
+    .stat-box-label {
+        font-size: 0.95em;
+        opacity: 0.9;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -762,10 +858,15 @@ update_activity()
 # ========== HELPER FUNCTIONS ==========
 def display_logo():
     """Affiche le logo de manière dynamique et professionnelle"""
-    st.markdown(f"""
-    <div class="logo-container">
-        <img src="{LOGO_URL}" alt="Campus Réussite Logo">
-    </div>
+    import os
+    if os.path.exists("logo.png"):
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.image("logo.png", width=180, use_column_width=False)
+    
+    # Ajouter le background du logo
+    st.markdown("""
+    <div class="logo-background"></div>
     """, unsafe_allow_html=True)
 
 def get_score_color(percentage):
@@ -1346,21 +1447,89 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     
     # ========== DASHBOARD ==========
     with admin_tabs[0]:
-        st.subheader("📊 Statistiques Principales")
+        st.markdown("<h2 style='color: #667eea; margin-bottom: 30px;'>📊 Tableaux de Bord</h2>", unsafe_allow_html=True)
+        
+        # STATISTIQUES PRINCIPALES
         col1, col2, col3, col4 = st.columns(4)
         
+        users_count = len(db.fa('SELECT * FROM utilisateurs'))
+        series_count = len(db.fa('SELECT * FROM series'))
+        quizzes_count = len(db.fa('SELECT * FROM quiz'))
+        feedback_count = len(db.fa('SELECT * FROM feedback'))
+        
         with col1:
-            users_count = len(db.fa('SELECT * FROM utilisateurs'))
-            st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">👥 Apprenants</div><div class="stat-number">{users_count}</div></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-box-label">👥 Apprenants</div>
+                <div class="stat-box-number">{users_count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with col2:
-            series_count = len(db.fa('SELECT * FROM series'))
-            st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">📚 Séries</div><div class="stat-number">{series_count}</div></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-box-label">📚 Séries</div>
+                <div class="stat-box-number">{series_count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with col3:
-            quizzes_count = len(db.fa('SELECT * FROM quiz'))
-            st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">🎯 Quizzes</div><div class="stat-number">{quizzes_count}</div></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-box-label">🎯 Quizzes</div>
+                <div class="stat-box-number">{quizzes_count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with col4:
-            feedback_count = len(db.fa('SELECT * FROM feedback'))
-            st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">💬 Feedbacks</div><div class="stat-number">{feedback_count}</div></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-box-label">💬 Feedbacks</div>
+                <div class="stat-box-number">{feedback_count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # ACTIVITÉ RÉCENTE
+        st.markdown("<h3 style='color: #667eea; margin-top: 30px;'>📈 Activité Récente</h3>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        # Résultats récents
+        with col1:
+            st.markdown("<h4 style='color: #1a1a1a;'>Tests Récents</h4>", unsafe_allow_html=True)
+            resultats_recents = db.fa('SELECT * FROM resultats ORDER BY date_test DESC LIMIT 5')
+            if resultats_recents:
+                for res in resultats_recents:
+                    user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (res['utilisateur_id'],))
+                    serie = db.f1('SELECT * FROM series WHERE id=?', (res['series_id'],))
+                    emoji = "🎉" if res['pourcentage'] >= 80 else "👍" if res['pourcentage'] >= 60 else "💪"
+                    st.markdown(f"""
+                    <div class="admin-card">
+                        <strong>{emoji} {user['prenom']} {user['nom']}</strong><br>
+                        {serie['nom']}<br>
+                        <span style="color: #667eea; font-weight: 700;">{res['pourcentage']:.1f}% ({res['score']}/{res['total']})</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Aucun test effectué")
+        
+        # Utilisateurs actifs
+        with col2:
+            st.markdown("<h4 style='color: #1a1a1a;'>Utilisateurs Actifs</h4>", unsafe_allow_html=True)
+            users = db.fa('SELECT * FROM utilisateurs ORDER BY last_activity DESC LIMIT 5')
+            if users:
+                for user in users:
+                    st.markdown(f"""
+                    <div class="admin-card">
+                        <strong>{user['prenom']} {user['nom']}</strong><br>
+                        <span style="color: #666; font-size: 0.9em;">{user['email']}</span><br>
+                        <span style="color: #10b981; font-weight: 700;">{'🟢 Actif' if user['status'] == 'actif' else '🔴 Bloqué'}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Aucun utilisateur")
     
     # ========== SÉRIES ==========
     with admin_tabs[1]:
@@ -1405,71 +1574,145 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     
     # ========== QUIZZES ==========
     with admin_tabs[2]:
-        st.subheader("🎯 Gestion des Quizzes")
+        st.markdown("<h2 style='color: #667eea;'>🎯 Gestion des Quizzes</h2>", unsafe_allow_html=True)
         
         series = db.fa('SELECT * FROM series')
-        if series:
-            selected_series = st.selectbox(
-                "Sélectionner une série",
-                [(s['id'], s['nom']) for s in series],
-                format_func=lambda x: x[1]
-            )
-            
-            st.write("---")
-            quizzes = db.fa('SELECT * FROM quiz WHERE series_id=?', (selected_series[0],))
-            
-            st.write(f"**{len(quizzes)} quizzes dans cette série**")
-            
-            for idx, q in enumerate(quizzes, 1):
-                col1, col2, col3 = st.columns([3, 0.5, 0.5])
-                
-                with col1:
-                    st.markdown(f"""
-                    <div class="card">
-                        <strong>Q{idx}: {q['question']}</strong>
-                        <small style="display: block; margin-top: 10px; color: #666;">
-                            A) {q['option_a']}<br>
-                            B) {q['option_b']}<br>
-                            C) {q['option_c']}<br>
-                            D) {q['option_d']}<br>
-                            <strong style="color: #667eea;">Réponse(s): {q['reponses_correctes']}</strong>
-                        </small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    if st.button("✏️", key=f"edit_{q['id']}", help="Éditer"):
-                        st.session_state.editing_quiz_id = q['id']
-                
-                with col3:
-                    if st.button("🗑️", key=f"del_quiz_{q['id']}", help="Supprimer"):
-                        db.q('DELETE FROM quiz WHERE id=?', (q['id'],))
-                        st.success("✅ Quiz supprimé")
-                        st.rerun()
-                
-                # Formulaire édition
-                if st.session_state.editing_quiz_id == q['id']:
-                    st.write("---")
-                    st.markdown("### ✏️ Éditer ce quiz")
-                    
-                    with st.form("edit_form"):
-                        new_q = st.text_input("Question", value=q['question'])
-                        new_a = st.text_input("Option A", value=q['option_a'])
-                        new_b = st.text_input("Option B", value=q['option_b'])
-                        new_c = st.text_input("Option C", value=q['option_c'])
-                        new_d = st.text_input("Option D", value=q['option_d'])
-                        new_correct = st.multiselect("Réponses correctes", ["A", "B", "C", "D"],
-                            default=q['reponses_correctes'].split(","))
-                        new_expl = st.text_area("Explication", value=q['explication'])
-                        
-                        if st.form_submit_button("💾 Sauvegarder"):
-                            db.q('UPDATE quiz SET question=?,option_a=?,option_b=?,option_c=?,option_d=?,reponses_correctes=?,explication=? WHERE id=?',
-                                (new_q, new_a, new_b, new_c, new_d, ",".join(new_correct), new_expl, q['id']))
-                            st.success("✅ Quiz modifié")
-                            st.session_state.editing_quiz_id = None
-                            st.rerun()
+        if not series:
+            st.warning("⚠️ Créez d'abord une série!")
         else:
-            st.info("ℹ️ Créez d'abord une série!")
+            # ONGLETS: VOIR ou CRÉER
+            sub_tab1, sub_tab2 = st.tabs(["📋 Voir Quizzes", "➕ Créer Manuelle"])
+            
+            # VOIR LES QUIZZES
+            with sub_tab1:
+                selected_series = st.selectbox(
+                    "Sélectionner une série",
+                    [(s['id'], s['nom']) for s in series],
+                    format_func=lambda x: x[1],
+                    key="view_series"
+                )
+                
+                st.divider()
+                quizzes = db.fa('SELECT * FROM quiz WHERE series_id=?', (selected_series[0],))
+                
+                st.markdown(f"<h4>📚 {len(quizzes)} quizzes</h4>", unsafe_allow_html=True)
+                
+                if quizzes:
+                    # TABLEAU PROFESSIONNEL
+                    table_html = """
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Question</th>
+                                <th>Réponse(s)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    
+                    for idx, q in enumerate(quizzes, 1):
+                        table_html += f"""
+                        <tr>
+                            <td><strong>{idx}</strong></td>
+                            <td>
+                                <strong>{q['question']}</strong><br>
+                                <small style="color: #666;">
+                                    A) {q['option_a']}<br>
+                                    B) {q['option_b']}<br>
+                                    C) {q['option_c']}<br>
+                                    D) {q['option_d']}
+                                </small>
+                            </td>
+                            <td><span style="color: #667eea; font-weight: 700;">{q['reponses_correctes']}</span></td>
+                        </tr>
+                        """
+                    
+                    table_html += """
+                        </tbody>
+                    </table>
+                    """
+                    
+                    st.markdown(table_html, unsafe_allow_html=True)
+                    
+                    st.divider()
+                    
+                    # Suppression individuelle
+                    st.markdown("<h4>🗑️ Supprimer un Quiz</h4>", unsafe_allow_html=True)
+                    quiz_to_delete = st.selectbox(
+                        "Sélectionner un quiz à supprimer",
+                        [(q['id'], f"Q{quizzes.index(q)+1}: {q['question'][:50]}...") for q in quizzes],
+                        format_func=lambda x: x[1],
+                        key="delete_quiz"
+                    )
+                    
+                    if st.button("🗑️ Supprimer ce Quiz", use_container_width=True, type="secondary"):
+                        db.q('DELETE FROM quiz WHERE id=?', (quiz_to_delete[0],))
+                        st.success("✅ Quiz supprimé!")
+                        st.rerun()
+                else:
+                    st.info("Aucun quiz dans cette série")
+            
+            # CRÉER MANUELLE
+            with sub_tab2:
+                st.markdown("<h4 style='color: #667eea;'>➕ Créer un nouveau Quiz</h4>", unsafe_allow_html=True)
+                
+                selected_series_create = st.selectbox(
+                    "Sélectionner la série",
+                    [(s['id'], s['nom']) for s in series],
+                    format_func=lambda x: x[1],
+                    key="create_series"
+                )
+                
+                with st.form("create_quiz_form", border=False):
+                    st.markdown("<h5>Informations du Quiz</h5>", unsafe_allow_html=True)
+                    
+                    question = st.text_area("📝 Question", height=100, placeholder="Écrivez la question ici...")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        option_a = st.text_input("Option A)", placeholder="Première réponse")
+                    with col2:
+                        option_b = st.text_input("Option B)", placeholder="Deuxième réponse")
+                    with col3:
+                        option_c = st.text_input("Option C)", placeholder="Troisième réponse")
+                    with col4:
+                        option_d = st.text_input("Option D)", placeholder="Quatrième réponse")
+                    
+                    st.divider()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        reponses_correctes = st.multiselect(
+                            "✅ Sélectionner la/les bonne(s) réponse(s)",
+                            ["A", "B", "C", "D"],
+                            default=["A"]
+                        )
+                    
+                    with col2:
+                        st.write("")
+                        st.write("")
+                        if st.checkbox("Réponses multiples?", value=False):
+                            st.caption("✅ Les apprenants devront trouver TOUTES les bonnes réponses")
+                    
+                    explication = st.text_area("💡 Explication (optionnel)", height=80, placeholder="Expliquez pourquoi c'est la bonne réponse...")
+                    
+                    st.divider()
+                    
+                    submitted = st.form_submit_button("✅ Créer le Quiz", use_container_width=True, type="primary")
+                    
+                    if submitted:
+                        if question and option_a and option_b and option_c and option_d and reponses_correctes:
+                            reponses_str = ",".join(reponses_correctes)
+                            if db.q('INSERT INTO quiz (series_id,question,option_a,option_b,option_c,option_d,reponses_correctes,explication) VALUES (?,?,?,?,?,?,?,?)',
+                                (selected_series_create[0], question, option_a, option_b, option_c, option_d, reponses_str, explication)):
+                                st.success("✅ Quiz créé avec succès!")
+                                st.balloons()
+                                st.rerun()
+                            else:
+                                st.error("❌ Erreur lors de la création")
+                        else:
+                            st.error("❌ Remplissez tous les champs obligatoires")
     
     # ========== IMPORT ==========
     with admin_tabs[3]:
