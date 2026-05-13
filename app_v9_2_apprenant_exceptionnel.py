@@ -1566,7 +1566,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 """, unsafe_allow_html=True)
             
             with col2:
-                if st.button("🗑️ Supprimer", key=f"del_serie_{s['id']}", use_container_width=True):
+                if st.button("🗑️ Supprimer", key=f"serie_del_{s['id']}", use_container_width=True):
                     db.q('DELETE FROM quiz WHERE series_id=?', (s['id'],))
                     db.q('DELETE FROM series WHERE id=?', (s['id'],))
                     st.success("✅ Série supprimée")
@@ -1624,12 +1624,12 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                             """, unsafe_allow_html=True)
                         
                         with col2:
-                            if st.button("✏️", key=f"edit_{q['id']}", help="Éditer", use_container_width=True):
+                            if st.button("✏️", key=f"quiz_edit_{q['id']}", help="Éditer", use_container_width=True):
                                 st.session_state.editing_quiz_id = q['id']
                                 st.rerun()
                         
                         with col3:
-                            if st.button("🗑️", key=f"del_{q['id']}", help="Supprimer", use_container_width=True):
+                            if st.button("🗑️", key=f"quiz_del_{q['id']}", help="Supprimer", use_container_width=True):
                                 db.q('DELETE FROM quiz WHERE id=?', (q['id'],))
                                 st.success("✅ Quiz supprimé!")
                                 st.rerun()
@@ -1800,20 +1800,20 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             
             with col2:
                 if st.button("🔒 Bloquer" if u['status'] == 'actif' else "✅ Débloquer", 
-                            key=f"block_{u['id']}", use_container_width=True):
+                            key=f"apprenant_block_{u['id']}", use_container_width=True):
                     new_status = 'bloqué' if u['status'] == 'actif' else 'actif'
                     db.q('UPDATE utilisateurs SET status=? WHERE id=?', (new_status, u['id']))
                     st.rerun()
             
             with col3:
                 new_dur = st.number_input("Min", 5, 1440, u['session_minutes'], 
-                                         key=f"dur_{u['id']}", step=1)
+                                         key=f"apprenant_dur_{u['id']}", step=1)
                 if new_dur != u['session_minutes']:
                     db.q('UPDATE utilisateurs SET session_minutes=? WHERE id=?', (new_dur, u['id']))
                     st.rerun()
             
             with col4:
-                if st.button("🗑️ Supprimer", key=f"del_{u['id']}", use_container_width=True):
+                if st.button("🗑️ Supprimer", key=f"apprenant_del_{u['id']}", use_container_width=True):
                     db.q('DELETE FROM utilisateurs WHERE id=?', (u['id'],))
                     st.rerun()
             
@@ -1865,7 +1865,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.rerun()
             
             with col3:
-                if st.button("🗑️", key=f"del_admin_{admin['id']}", use_container_width=True):
+                if st.button("🗑️", key=f"admin_del_{admin['id']}", use_container_width=True):
                     db.q('DELETE FROM admins WHERE id=?', (admin['id'],))
                     st.rerun()
             
@@ -1942,7 +1942,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     """, unsafe_allow_html=True)
                 
                 with col2:
-                    if st.button("🗑️", key=f"del_fb_{fb['id']}", use_container_width=True):
+                    if st.button("🗑️", key=f"feedback_del_{fb['id']}", use_container_width=True):
                         db.q('DELETE FROM feedback WHERE id=?', (fb['id'],))
                         st.rerun()
         else:
