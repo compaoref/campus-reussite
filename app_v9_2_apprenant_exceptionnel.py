@@ -1813,7 +1813,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.rerun()
             
             with col4:
-                if st.button("🗑️ Supprimer", key=f"del_{u['id']}", use_container_width=True):
+                if st.button(     "🗑️ Supprimer",     key=f"del_user_{u['id']}_{index}",     use_container_width=True ):
                     db.q('DELETE FROM utilisateurs WHERE id=?', (u['id'],))
                     st.rerun()
             
