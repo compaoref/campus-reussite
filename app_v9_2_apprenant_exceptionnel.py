@@ -1302,7 +1302,8 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                             options,
                             format_func=lambda x: f"{x}) {option_texts[ord(x)-65]}",
                             key=f"q_{q['id']}",
-                            label_visibility="collapsed"
+                            label_visibility="collapsed",
+                            index=None
                         )
                         
                         st.session_state.quiz_answers[q['id']] = selected
@@ -1321,10 +1322,20 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     
                     with col2:
                         if st.button("✅ Soumettre les réponses", use_container_width=True, type="primary"):
+                            # Vérifier que TOUTES les questions ont une réponse
+                            unanswered = []
+                            for idx, q in enumerate(quizzes, 1):
+                                if q['id'] not in st.session_state.quiz_answers or st.session_state.quiz_answers[q['id']] is None:
+                                    unanswered.append(idx)
+                            
+                            if unanswered:
+                                st.error(f"❌ Vous n'avez pas répondu aux questions: {', '.join(map(str, unanswered))}")
+                                st.stop()
+                            
                             # Sauvegarder le résultat
                             score = 0
                             for q in quizzes:
-                                if q['id'] in st.session_state.quiz_answers:
+                                if q['id'] in st.session_state.quiz_answers and st.session_state.quiz_answers[q['id']] is not None:
                                     if st.session_state.quiz_answers[q['id']] in q['reponses_correctes'].split(","):
                                         score += 1
                             
