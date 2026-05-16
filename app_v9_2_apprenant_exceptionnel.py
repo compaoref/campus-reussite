@@ -1,9 +1,12 @@
 """
-🎓 CAMPUS RÉUSSITE v9.2 - PAGE APPRENANT EXCEPTIONNELLE
-✨ Corrections Magnifiques et Dynamiques
-✅ Logo Intégré Profesionnellement
-✅ Bug Fixes pour Affichage Corrections
-✅ Expérience Apprenant INCROYABLE
+🎓 CAMPUS RÉUSSITE v10 - ULTRA SÉCURISÉE
+✅ BD persistante sur disque (data/campus_persistant.db)
+✅ Effacement auto des champs après création
+✅ Interface de maintenance (débloquer comptes, stats)
+✅ Permissions admin secondaire (pas de suppression ni ajout admin)
+✅ Blocage compte après 3 tentatives de connexion
+✅ Détection capture d'écran (blocage session)
+✅ Aucune sélection par défaut dans les quiz
 """
 
 import streamlit as st
@@ -16,12 +19,14 @@ import os
 from base64 import b64encode
 
 st.set_page_config(
-    page_title="Campus Réussite v9.2",
+    page_title="Campus Réussite v10",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-DB_PATH = "campus.db"
+# BD PERSISTANTE sur disque
+os.makedirs("data", exist_ok=True)
+DB_PATH = "data/campus_persistant.db"  # Persistant 24/7!
 
 # ========== CONFIGURATION LOGO ==========
 # À modifier: mettez l'URL ou le chemin de votre logo
@@ -648,7 +653,25 @@ class DB:
             role TEXT DEFAULT 'apprenant',
             status TEXT DEFAULT 'actif', 
             session_minutes INTEGER DEFAULT 120,
-            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            tentatives_connexion INTEGER DEFAULT 0,
+            bloque INTEGER DEFAULT 0,
+            date_blocage TEXT,
+            raison_blocage TEXT)''')
+        
+        # Ajouter colonnes sécurité si elles n'existent pas (migration)
+        try:
+            c.execute('ALTER TABLE utilisateurs ADD COLUMN tentatives_connexion INTEGER DEFAULT 0')
+        except: pass
+        try:
+            c.execute('ALTER TABLE utilisateurs ADD COLUMN bloque INTEGER DEFAULT 0')
+        except: pass
+        try:
+            c.execute('ALTER TABLE utilisateurs ADD COLUMN date_blocage TEXT')
+        except: pass
+        try:
+            c.execute('ALTER TABLE utilisateurs ADD COLUMN raison_blocage TEXT')
+        except: pass
         
         c.execute('''CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY, 
@@ -656,8 +679,21 @@ class DB:
             password_hash TEXT, 
             nom TEXT, 
             prenom TEXT,
+            niveau_permission TEXT DEFAULT 'secondaire',
+            peut_supprimer_quiz INTEGER DEFAULT 0,
+            peut_ajouter_admin INTEGER DEFAULT 0,
             date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'actif')''')
+        # Migration admins
+        try:
+            c.execute('ALTER TABLE admins ADD COLUMN niveau_permission TEXT DEFAULT \'secondaire\'')
+        except: pass
+        try:
+            c.execute('ALTER TABLE admins ADD COLUMN peut_supprimer_quiz INTEGER DEFAULT 0')
+        except: pass
+        try:
+            c.execute('ALTER TABLE admins ADD COLUMN peut_ajouter_admin INTEGER DEFAULT 0')
+        except: pass
         
         c.execute('''CREATE TABLE IF NOT EXISTS series (
             id INTEGER PRIMARY KEY, 
@@ -1145,15 +1181,37 @@ if not st.session_state.logged_in:
                 
                 # Vérifier Apprenant
                 user = db.f1('SELECT * FROM utilisateurs WHERE email=?', (email.lower(),))
-                if user and verify_pwd(pwd, user['password_hash']):
-                    if user['status'] == 'bloqué':
-                        st.error("❌ Votre compte a été bloqué")
-                    else:
+                if user:
+                    # Vérifier si le compte est bloqué
+                    if user.get('bloque', 0) == 1:
+                        st.error(f"🚫 Compte bloqué: {user.get('raison_blocage', 'Contactez l\'admin')}")
+                    elif user.get('status') == 'bloqué':
+                        st.error("❌ Votre compte a été suspendu par l\'administrateur")
+                    elif user.get('tentatives_connexion', 0) >= 3:
+                        # Bloquer automatiquement
+                        db.q('UPDATE utilisateurs SET bloque=1, date_blocage=?, raison_blocage=? WHERE id=?',
+                            (datetime.now().isoformat(), "3 tentatives de connexion échouées", user['id']))
+                        st.error("🚫 Compte bloqué après 3 tentatives. Contactez l\'administrateur.")
+                    elif verify_pwd(pwd, user['password_hash']):
+                        # Succès - réinitialiser tentatives
+                        db.q('UPDATE utilisateurs SET tentatives_connexion=0, last_activity=? WHERE id=?',
+                            (datetime.now().isoformat(), user['id']))
                         st.session_state.logged_in = True
                         st.session_state.user = user
                         st.session_state.is_admin = False
                         st.success("✅ Bienvenue!")
                         st.rerun()
+                    else:
+                        # Échec - incrémenter tentatives
+                        new_t = user.get('tentatives_connexion', 0) + 1
+                        db.q('UPDATE utilisateurs SET tentatives_connexion=? WHERE id=?', (new_t, user['id']))
+                        reste = max(0, 3 - new_t)
+                        if reste > 0:
+                            st.error(f"❌ Mot de passe incorrect. Il vous reste {reste} tentative(s).")
+                        else:
+                            db.q('UPDATE utilisateurs SET bloque=1, date_blocage=?, raison_blocage=? WHERE id=?',
+                                (datetime.now().isoformat(), "3 tentatives de connexion échouées", user['id']))
+                            st.error("🚫 Compte bloqué après 3 tentatives. Contactez l\'administrateur.")
                 else:
                     st.error("❌ Email ou mot de passe incorrect")
         
@@ -1183,6 +1241,11 @@ if not st.session_state.logged_in:
                         (nom, prenom, email.lower(), hash_pwd(password)))
                     if result:
                         st.success("✅ Compte créé avec succès! Connectez-vous maintenant.")
+                        # Effacer les champs automatiquement
+                        for key in ['nom','reg_email','reg_pwd','reg_confirm']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
                     else:
                         st.error("❌ Cet email est déjà utilisé")
 
@@ -1444,6 +1507,33 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     </div>
     """, unsafe_allow_html=True)
     
+    # JS anti-capture d'écran
+    st.markdown("""
+    <script>
+    document.addEventListener('keyup', function(e) {
+        if (e.key === 'PrintScreen') {
+            window.parent.postMessage({type: 'screenshot_attempt'}, '*');
+            alert('⚠️ Les captures d\'écran sont interdites sur cette plateforme!');
+        }
+    });
+    document.addEventListener('keydown', function(e) {
+        if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === 'S')) {
+            e.preventDefault();
+            alert('⚠️ Les captures d\'écran sont interdites sur cette plateforme!');
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Récupérer les permissions de l'admin connecté
+    admin_connecte = db.f1('SELECT * FROM admins WHERE email=?', (st.session_state.user.get('email',''),)) if st.session_state.user.get('id', 0) != 0 else None
+    est_admin_principal = st.session_state.user.get('id', 0) == 0 or (admin_connecte and admin_connecte.get('niveau_permission') == 'principal')
+    peut_supprimer = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_quiz', 0) == 1)
+    peut_ajouter_admin = est_admin_principal or (admin_connecte and admin_connecte.get('peut_ajouter_admin', 0) == 1)
+    
+    if not est_admin_principal:
+        st.warning("ℹ️ Vous êtes connecté en tant qu'administrateur secondaire — certaines fonctionnalités sont restreintes.")
+    
     # Admin Menu
     admin_tabs = st.tabs([
         "📊 Dashboard",
@@ -1453,6 +1543,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         "👥 Apprenants",
         "👨‍💼 Administrateurs",
         "💾 Base Données",
+        "🔧 Maintenance",
         "💬 Feedback"
     ])
     
@@ -1640,10 +1731,13 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                                 st.rerun()
                         
                         with col3:
-                            if st.button("🗑️", key=f"quiz_del_{q['id']}", help="Supprimer", use_container_width=True):
-                                db.q('DELETE FROM quiz WHERE id=?', (q['id'],))
-                                st.success("✅ Quiz supprimé!")
-                                st.rerun()
+                            if peut_supprimer:
+                                if st.button("🗑️", key=f"quiz_del_{q['id']}", help="Supprimer", use_container_width=True):
+                                    db.q('DELETE FROM quiz WHERE id=?', (q['id'],))
+                                    st.success("✅ Quiz supprimé!")
+                                    st.rerun()
+                            else:
+                                st.markdown("<small style='color:#999;'>🔒</small>", unsafe_allow_html=True)
                         
                         # Édition inline
                         if st.session_state.editing_quiz_id == q['id']:
@@ -1834,27 +1928,36 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     with admin_tabs[5]:
         st.subheader("👨‍💼 Gestion des Administrateurs")
         
-        with st.expander("➕ Créer un nouvel administrateur"):
-            nom_admin = st.text_input("Nom")
-            prenom_admin = st.text_input("Prénom")
-            email_admin = st.text_input("Email")
-            pwd_admin = st.text_input("Mot de passe (min 8 caractères)", type="password")
-            pwd_admin_confirm = st.text_input("Confirmer le mot de passe", type="password")
-            
-            if st.button("Créer l'administrateur", use_container_width=True, type="primary"):
-                if len(pwd_admin) < 8:
-                    st.error("❌ Mot de passe trop court (minimum 8)")
-                elif pwd_admin != pwd_admin_confirm:
-                    st.error("❌ Les mots de passe ne correspondent pas")
-                elif not all([nom_admin, prenom_admin, email_admin]):
-                    st.error("❌ Remplissez tous les champs")
-                else:
-                    if db.q('INSERT INTO admins (email,password_hash,nom,prenom) VALUES (?,?,?,?)',
-                        (email_admin.lower(), hash_pwd(pwd_admin), nom_admin, prenom_admin)):
-                        st.success(f"✅ Admin créé: {email_admin}")
-                        st.rerun()
+        if peut_ajouter_admin:
+            with st.expander("➕ Créer un nouvel administrateur"):
+                nom_admin = st.text_input("Nom")
+                prenom_admin = st.text_input("Prénom")
+                email_admin = st.text_input("Email")
+                pwd_admin = st.text_input("Mot de passe (min 8 caractères)", type="password")
+                pwd_admin_confirm = st.text_input("Confirmer le mot de passe", type="password")
+                
+                niv_perm = st.selectbox("Niveau de permission", 
+                    ["secondaire", "principal"],
+                    help="Secondaire: ne peut que ajouter/importer quizzes. Principal: tous les droits.")
+                
+                peut_sup = st.checkbox("Peut supprimer des quizzes", value=False)
+                
+                if st.button("Créer l'administrateur", use_container_width=True, type="primary"):
+                    if len(pwd_admin) < 8:
+                        st.error("❌ Mot de passe trop court (minimum 8)")
+                    elif pwd_admin != pwd_admin_confirm:
+                        st.error("❌ Les mots de passe ne correspondent pas")
+                    elif not all([nom_admin, prenom_admin, email_admin]):
+                        st.error("❌ Remplissez tous les champs")
                     else:
-                        st.error("❌ Cet email est déjà utilisé")
+                        if db.q('INSERT INTO admins (email,password_hash,nom,prenom,niveau_permission,peut_supprimer_quiz,peut_ajouter_admin) VALUES (?,?,?,?,?,?,?)',
+                            (email_admin.lower(), hash_pwd(pwd_admin), nom_admin, prenom_admin, niv_perm, 1 if peut_sup else 0, 1 if niv_perm == 'principal' else 0)):
+                            st.success(f"✅ Admin créé: {email_admin}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Cet email est déjà utilisé")
+        else:
+            st.warning("🔒 Vous n'avez pas la permission d'ajouter des administrateurs.")
         
         st.write("---")
         st.subheader("Administrateurs actuels")
@@ -1932,8 +2035,68 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         with col6:
             st.metric("Feedbacks", len(db.fa('SELECT * FROM feedback')))
     
-    # ========== FEEDBACK ==========
+    # ========== MAINTENANCE ==========
     with admin_tabs[7]:
+        st.markdown("<h2 style='color: #667eea;'>🔧 Interface de Maintenance</h2>", unsafe_allow_html=True)
+        
+        maint_t1, maint_t2, maint_t3 = st.tabs(["🚫 Comptes Bloqués", "📊 Statistiques BD", "⚙️ Outils"])
+        
+        with maint_t1:
+            st.markdown("<h3>Comptes bloqués</h3>", unsafe_allow_html=True)
+            blocked = db.fa('SELECT * FROM utilisateurs WHERE bloque=1')
+            if blocked:
+                for bu in blocked:
+                    col_b1, col_b2 = st.columns([3, 1])
+                    with col_b1:
+                        st.markdown(f"""
+                        <div class="admin-card" style="background:#ffe0e0; border-left-color: #ef4444;">
+                            <strong>🚫 {bu['prenom']} {bu['nom']}</strong><br>
+                            📧 {bu['email']}<br>
+                            ❌ Raison: {bu.get('raison_blocage', 'N/A')}<br>
+                            📅 {bu.get('date_blocage', 'N/A')}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_b2:
+                        if st.button("🔓 Débloquer", key=f"unblock_{bu['id']}", use_container_width=True):
+                            db.q('UPDATE utilisateurs SET bloque=0, tentatives_connexion=0, raison_blocage=NULL WHERE id=?', (bu['id'],))
+                            st.success(f"✅ {bu['prenom']} débloqué!")
+                            st.rerun()
+            else:
+                st.success("✅ Aucun compte bloqué en ce moment")
+        
+        with maint_t2:
+            st.markdown("<h3>Statistiques en Temps Réel</h3>", unsafe_allow_html=True)
+            m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+            stats_vals = [
+                ("👥", "Utilisateurs", len(db.fa('SELECT id FROM utilisateurs'))),
+                ("👨‍💼", "Admins", len(db.fa('SELECT id FROM admins'))),
+                ("📚", "Séries", len(db.fa('SELECT id FROM series'))),
+                ("🎯", "Quizzes", len(db.fa('SELECT id FROM quiz'))),
+                ("🚫", "Bloqués", len(db.fa('SELECT id FROM utilisateurs WHERE bloque=1')))
+            ]
+            for col_m, (emoji, label, val) in zip([m_col1, m_col2, m_col3, m_col4, m_col5], stats_vals):
+                with col_m:
+                    st.markdown(f'<div class="stat-box"><div class="stat-box-label">{emoji} {label}</div><div class="stat-box-number">{val}</div></div>', unsafe_allow_html=True)
+            st.divider()
+            if os.path.exists(DB_PATH):
+                size_kb = os.path.getsize(DB_PATH) / 1024
+                st.info(f"📁 Fichier BD: {size_kb:.1f} KB — {DB_PATH}")
+        
+        with maint_t3:
+            st.markdown("<h3>Outils Système</h3>", unsafe_allow_html=True)
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                if st.button("🔓 Débloquer TOUS les comptes", use_container_width=True):
+                    db.q('UPDATE utilisateurs SET bloque=0, tentatives_connexion=0')
+                    st.success("✅ Tous les comptes débloqués!")
+                    st.rerun()
+            with col_t2:
+                if st.button("🔄 Réinitialiser Tentatives", use_container_width=True):
+                    db.q('UPDATE utilisateurs SET tentatives_connexion=0')
+                    st.success("✅ Tentatives réinitialisées!")
+    
+    # ========== FEEDBACK ==========
+    with admin_tabs[8]:
         st.subheader("💬 Feedbacks des Apprenants")
         
         feedbacks = db.fa('SELECT * FROM feedback ORDER BY date_feedback DESC')
