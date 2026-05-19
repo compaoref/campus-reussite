@@ -715,7 +715,34 @@ class DB:
                 f"L'URL ne commence pas par 'postgresql'.\nValeur actuelle: {url[:30]}...",
                 url[:40] + "..." if len(url) > 40 else url
             )
+        # ✅ Encoder automatiquement les caractères spéciaux du mot de passe
+        url = self._encoder_url(url)
         return url
+
+    def _encoder_url(self, url):
+        """Encode automatiquement les caractères spéciaux dans le mot de passe de l'URL"""
+        from urllib.parse import quote, urlparse, urlunparse
+        try:
+            # Parser l'URL
+            parsed = urlparse(url)
+            # Récupérer le mot de passe brut
+            mdp_brut = parsed.password
+            if mdp_brut:
+                # Encoder le mot de passe (tous les caractères spéciaux)
+                mdp_encode = quote(mdp_brut, safe="")
+                # Reconstruire l'URL avec le mot de passe encodé
+                netloc = parsed.netloc.replace(
+                    f":{mdp_brut}@",
+                    f":{mdp_encode}@"
+                )
+                url = urlunparse((
+                    parsed.scheme, netloc, parsed.path,
+                    parsed.params, parsed.query, parsed.fragment
+                ))
+            return url
+        except Exception:
+            # Si l'encodage échoue, retourner l'URL originale
+            return url
 
     def _masquer_url(self):
         # Masquer le mot de passe pour l'affichage
@@ -732,9 +759,24 @@ class DB:
             conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
             conn.close()
         except psycopg2.OperationalError as e:
+            msg = str(e)
+            # Détecter l'erreur de caractères spéciaux dans le mot de passe
+            conseil = ""
+            if "missing key/value" in msg or "invalid dsn" in msg.lower():
+                conseil = (
+                    "\n\n⚠️ CAUSE PROBABLE: Votre mot de passe contient des caractères spéciaux\n"
+                    "(%, @, #, &, +, espace, ¨, ^, etc.)\n\n"
+                    "SOLUTION: Changez votre mot de passe Supabase pour un mot de passe\n"
+                    "simple sans caractères spéciaux (ex: MonMotDePasse123)\n\n"
+                    "Pour changer le mot de passe:\n"
+                    "1. Supabase → Project Settings → Database\n"
+                    "2. Section 'Database password' → Reset password\n"
+                    "3. Choisir un mot de passe SANS: % @ # & + ¨ ^ espace\n"
+                    "4. Mettre à jour DATABASE_URL dans les secrets Streamlit"
+                )
             _show_db_error_page(
-                "Connexion à Supabase (psycopg2.connect)",
-                str(e),
+                "Connexion a Supabase",
+                msg + conseil,
                 self._masquer_url()
             )
         except Exception as e:
