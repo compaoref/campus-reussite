@@ -10,7 +10,6 @@
 """
 
 import streamlit as st
-import sqlite3
 import pandas as pd
 import json
 import hashlib
@@ -635,150 +634,224 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ========== DATABASE CLASS ==========
+# ========== DATABASE CLASS - SUPABASE/POSTGRESQL ==========
+import psycopg2
+import psycopg2.extras
+
+def _show_db_error_page(etape, message, url_partielle=""):
+    """Affiche une page de diagnostic claire quand la BD ne répond pas"""
+    st.markdown("""
+    <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:15px;padding:30px;margin:20px 0;">
+        <h2 style="color:#856404;">⚠️ Problème de Connexion Base de Données</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.error(f"**Etape échouée:** {etape}")
+        st.code(message, language="text")
+    with col2:
+        st.info("**URL détectée (masquée):**")
+        st.code(url_partielle if url_partielle else "Aucune URL trouvée", language="text")
+
+    st.markdown("---")
+    st.markdown("### Checklist de diagnostic")
+
+    checks = {
+        "DATABASE_URL dans les secrets Streamlit": "Aller sur share.streamlit.io → votre app → Settings → Secrets",
+        "Format correct de l'URL": "postgresql://postgres.XXXX:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres",
+        "Mot de passe sans caractères spéciaux (@, #, %)": "Si le mdp contient ces caractères, les encoder: @ → %40",
+        "Projet Supabase actif (pas en pause)": "Aller sur supabase.com → vérifier que le projet n'est pas en pause",
+        "psycopg2-binary dans requirements.txt": "Le fichier requirements.txt doit contenir: psycopg2-binary>=2.9.0",
+    }
+
+    for check, solution in checks.items():
+        with st.expander(f"Vérifier: {check}"):
+            st.write(f"**Solution:** {solution}")
+
+    st.markdown("---")
+    st.markdown("### Comment récupérer la bonne URL Supabase")
+    st.markdown("""
+    1. Aller sur **https://supabase.com** → votre projet
+    2. Cliquer **Project Settings** (icône engrenage en bas à gauche)
+    3. Cliquer **Database** dans le menu
+    4. Descendre jusqu'à **Connection string**
+    5. Choisir l'onglet **URI**
+    6. Copier l'URL complète
+    7. Remplacer `[YOUR-PASSWORD]` par votre vrai mot de passe
+    """)
+
+    st.markdown("### Coller dans Streamlit Cloud Secrets")
+    st.code("""DATABASE_URL = "postgresql://postgres.XXXX:VOTRE_MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+
+[admins]
+"admin@campus.com" = "votre_mot_de_passe_admin"
+""", language="toml")
+
+    if st.button("Rafraichir pour retenter la connexion", type="primary", use_container_width=True):
+        st.rerun()
+
+    st.stop()
+
+
 class DB:
     def __init__(self):
+        self._url = self._get_url()
+        self._test_connexion()
         self.init()
-    
+
+    def _get_url(self):
+        # Vérifier que DATABASE_URL existe dans secrets
+        if "DATABASE_URL" not in st.secrets:
+            _show_db_error_page(
+                "Lecture du secret DATABASE_URL",
+                "La clé DATABASE_URL est introuvable dans vos secrets Streamlit.\nVous devez l'ajouter dans Settings → Secrets.",
+                "AUCUNE URL CONFIGUREE"
+            )
+        url = st.secrets["DATABASE_URL"]
+        if not url or not url.startswith("postgresql"):
+            _show_db_error_page(
+                "Validation du format DATABASE_URL",
+                f"L'URL ne commence pas par 'postgresql'.\nValeur actuelle: {url[:30]}...",
+                url[:40] + "..." if len(url) > 40 else url
+            )
+        return url
+
+    def _masquer_url(self):
+        # Masquer le mot de passe pour l'affichage
+        try:
+            parts = self._url.split("@")
+            avant = parts[0].split(":")
+            return f"{avant[0]}:****@{parts[1]}"
+        except Exception:
+            return "URL_INVALIDE"
+
+    def _test_connexion(self):
+        # Tester la connexion AVANT de continuer
+        try:
+            conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
+            conn.close()
+        except psycopg2.OperationalError as e:
+            _show_db_error_page(
+                "Connexion à Supabase (psycopg2.connect)",
+                str(e),
+                self._masquer_url()
+            )
+        except Exception as e:
+            _show_db_error_page(
+                "Connexion inattendue",
+                str(e),
+                self._masquer_url()
+            )
+
+    def _conn(self):
+        try:
+            conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
+            return conn
+        except Exception as e:
+            _show_db_error_page("Connexion BD perdue", str(e), self._masquer_url())
+
     def init(self):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS utilisateurs (
-            id INTEGER PRIMARY KEY, 
-            nom TEXT, 
-            prenom TEXT, 
-            email TEXT UNIQUE,
-            password_hash TEXT, 
-            role TEXT DEFAULT 'apprenant',
-            status TEXT DEFAULT 'actif', 
-            session_minutes INTEGER DEFAULT 120,
-            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            tentatives_connexion INTEGER DEFAULT 0,
-            bloque INTEGER DEFAULT 0,
-            date_blocage TEXT,
-            raison_blocage TEXT)''')
-        
-        # Ajouter colonnes sécurité si elles n'existent pas (migration)
         try:
-            c.execute('ALTER TABLE utilisateurs ADD COLUMN tentatives_connexion INTEGER DEFAULT 0')
-        except: pass
-        try:
-            c.execute('ALTER TABLE utilisateurs ADD COLUMN bloque INTEGER DEFAULT 0')
-        except: pass
-        try:
-            c.execute('ALTER TABLE utilisateurs ADD COLUMN date_blocage TEXT')
-        except: pass
-        try:
-            c.execute('ALTER TABLE utilisateurs ADD COLUMN raison_blocage TEXT')
-        except: pass
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY, 
-            email TEXT UNIQUE,
-            password_hash TEXT, 
-            nom TEXT, 
-            prenom TEXT,
-            niveau_permission TEXT DEFAULT 'secondaire',
-            peut_supprimer_quiz INTEGER DEFAULT 0,
-            peut_ajouter_admin INTEGER DEFAULT 0,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'actif')''')
-        # Migration admins
-        try:
-            c.execute('ALTER TABLE admins ADD COLUMN niveau_permission TEXT DEFAULT \'secondaire\'')
-        except: pass
-        try:
-            c.execute('ALTER TABLE admins ADD COLUMN peut_supprimer_quiz INTEGER DEFAULT 0')
-        except: pass
-        try:
-            c.execute('ALTER TABLE admins ADD COLUMN peut_ajouter_admin INTEGER DEFAULT 0')
-        except: pass
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS series (
-            id INTEGER PRIMARY KEY, 
-            nom TEXT UNIQUE, 
-            description TEXT, 
-            nombre_questions INTEGER DEFAULT 0)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS quiz (
-            id INTEGER PRIMARY KEY, 
-            series_id INTEGER, 
-            question TEXT, 
-            option_a TEXT,
-            option_b TEXT, 
-            option_c TEXT, 
-            option_d TEXT, 
-            reponses_correctes TEXT, 
-            explication TEXT)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS quiz_pending (
-            id INTEGER PRIMARY KEY, 
-            question TEXT, 
-            option_a TEXT, 
-            option_b TEXT,
-            option_c TEXT, 
-            option_d TEXT, 
-            reponses_correctes TEXT, 
-            explication TEXT, 
-            categorie TEXT)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS resultats (
-            id INTEGER PRIMARY KEY, 
-            utilisateur_id INTEGER, 
-            series_id INTEGER,
-            score INTEGER, 
-            total INTEGER, 
-            pourcentage REAL,
-            date_test TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY, 
-            email TEXT, 
-            titre TEXT, 
-            message TEXT, 
-            type TEXT,
-            date_feedback TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        
-        # Table pour stocker les réponses détaillées
-        c.execute('''CREATE TABLE IF NOT EXISTS reponses_quiz (
-            id INTEGER PRIMARY KEY,
-            resultat_id INTEGER,
-            quiz_id INTEGER,
-            reponse_utilisateur TEXT,
-            reponses_correctes TEXT)''')
-        
-        conn.commit()
-        conn.close()
-    
+            conn = self._conn()
+            c = conn.cursor()
+            tables_sql = [
+                """CREATE TABLE IF NOT EXISTS utilisateurs (
+                    id SERIAL PRIMARY KEY,
+                    nom TEXT, prenom TEXT, email TEXT UNIQUE,
+                    password_hash TEXT, role TEXT DEFAULT 'apprenant',
+                    status TEXT DEFAULT 'actif', session_minutes INTEGER DEFAULT 120,
+                    last_activity TIMESTAMP DEFAULT NOW(),
+                    tentatives_connexion INTEGER DEFAULT 0,
+                    bloque INTEGER DEFAULT 0,
+                    date_blocage TEXT, raison_blocage TEXT
+                )""",
+                """CREATE TABLE IF NOT EXISTS admins (
+                    id SERIAL PRIMARY KEY,
+                    email TEXT UNIQUE, password_hash TEXT,
+                    nom TEXT, prenom TEXT,
+                    niveau_permission TEXT DEFAULT 'secondaire',
+                    peut_supprimer_quiz INTEGER DEFAULT 0,
+                    peut_ajouter_admin INTEGER DEFAULT 0,
+                    date_creation TIMESTAMP DEFAULT NOW(),
+                    status TEXT DEFAULT 'actif'
+                )""",
+                """CREATE TABLE IF NOT EXISTS series (
+                    id SERIAL PRIMARY KEY,
+                    nom TEXT UNIQUE, description TEXT,
+                    nombre_questions INTEGER DEFAULT 0
+                )""",
+                """CREATE TABLE IF NOT EXISTS quiz (
+                    id SERIAL PRIMARY KEY, series_id INTEGER,
+                    question TEXT, option_a TEXT, option_b TEXT,
+                    option_c TEXT, option_d TEXT,
+                    reponses_correctes TEXT, explication TEXT
+                )""",
+                """CREATE TABLE IF NOT EXISTS resultats (
+                    id SERIAL PRIMARY KEY,
+                    utilisateur_id INTEGER, series_id INTEGER,
+                    score INTEGER, total INTEGER, pourcentage REAL,
+                    date_test TIMESTAMP DEFAULT NOW()
+                )""",
+                """CREATE TABLE IF NOT EXISTS feedback (
+                    id SERIAL PRIMARY KEY,
+                    email TEXT, titre TEXT, message TEXT,
+                    type TEXT, date_feedback TIMESTAMP DEFAULT NOW()
+                )""",
+                """CREATE TABLE IF NOT EXISTS reponses_quiz (
+                    id SERIAL PRIMARY KEY,
+                    resultat_id INTEGER, quiz_id INTEGER,
+                    reponse_utilisateur TEXT, reponses_correctes TEXT
+                )""",
+            ]
+            for sql in tables_sql:
+                c.execute(sql)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            _show_db_error_page(
+                "Creation des tables",
+                str(e),
+                self._masquer_url()
+            )
+
     def q(self, sql, p=()):
+        sql = sql.replace("?", "%s")
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute(sql, p)
+            conn = self._conn()
+            c = conn.cursor()
+            c.execute(sql, p)
             conn.commit()
             conn.close()
             return True
         except Exception as e:
+            st.warning(f"Erreur BD (ecriture): {str(e)[:120]}")
             return False
-    
+
     def f1(self, sql, p=()):
+        sql = sql.replace("?", "%s")
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            r = conn.execute(sql, p).fetchone()
+            conn = self._conn()
+            c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            c.execute(sql, p)
+            r = c.fetchone()
             conn.close()
             return dict(r) if r else None
-        except:
+        except Exception as e:
+            st.warning(f"Erreur BD (lecture): {str(e)[:120]}")
             return None
-    
+
     def fa(self, sql, p=()):
+        sql = sql.replace("?", "%s")
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            r = conn.execute(sql, p).fetchall()
+            conn = self._conn()
+            c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            c.execute(sql, p)
+            rows = c.fetchall()
             conn.close()
-            return [dict(x) for x in r] if r else []
-        except:
+            return [dict(r) for r in rows] if rows else []
+        except Exception as e:
+            st.warning(f"Erreur BD (liste): {str(e)[:120]}")
             return []
 
 db = DB()
@@ -887,6 +960,15 @@ if "current_quizzes" not in st.session_state:
     st.session_state.current_quizzes = []
 if "correction_data" not in st.session_state:
     st.session_state.correction_data = None
+# ✅ COMPTEURS DE CLÉS pour vider les formulaires automatiquement
+if "register_form_key" not in st.session_state:
+    st.session_state.register_form_key = 0
+if "quiz_form_key" not in st.session_state:
+    st.session_state.quiz_form_key = 0
+if "serie_form_key" not in st.session_state:
+    st.session_state.serie_form_key = 0
+if "admin_form_key" not in st.session_state:
+    st.session_state.admin_form_key = 0
 
 check_session_timeout()
 update_activity()
@@ -1217,37 +1299,40 @@ if not st.session_state.logged_in:
         
         with tab2:
             st.subheader("📝 Créer un nouveau compte")
-            col_nom, col_prenom = st.columns(2)
-            with col_nom:
-                nom = st.text_input("👤 Nom")
-            with col_prenom:
-                prenom = st.text_input("👤 Prénom")
             
-            email = st.text_input("📧 Adresse email", key="reg_email")
-            password = st.text_input("🔑 Mot de passe (min 6 caractères)", type="password", key="reg_pwd")
-            pwd_confirm = st.text_input("🔑 Confirmer le mot de passe", type="password", key="reg_confirm")
-            
-            st.info("💡 Utilisez votre email pour vous connecter par la suite")
-            
-            if st.button("✨ S'inscrire", use_container_width=True, type="primary"):
-                if len(password) < 6:
-                    st.error("❌ Mot de passe trop court (minimum 6 caractères)")
-                elif password != pwd_confirm:
-                    st.error("❌ Les mots de passe ne correspondent pas")
-                elif not nom or not prenom or not email:
-                    st.error("❌ Remplissez tous les champs")
-                else:
-                    result = db.q('INSERT INTO utilisateurs (nom,prenom,email,password_hash) VALUES (?,?,?,?)',
-                        (nom, prenom, email.lower(), hash_pwd(password)))
-                    if result:
-                        st.success("✅ Compte créé avec succès! Connectez-vous maintenant.")
-                        # Effacer les champs automatiquement
-                        for key in ['nom','reg_email','reg_pwd','reg_confirm']:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+            # Formulaire avec clé dynamique → vide à chaque succès
+            with st.form(key=f"register_form_{st.session_state.register_form_key}", border=False):
+                col_nom, col_prenom = st.columns(2)
+                with col_nom:
+                    nom = st.text_input("👤 Nom", placeholder="Votre nom de famille")
+                with col_prenom:
+                    prenom = st.text_input("👤 Prénom", placeholder="Votre prénom")
+                
+                email = st.text_input("📧 Adresse email", placeholder="exemple@email.com")
+                password = st.text_input("🔑 Mot de passe (min 6 caractères)", type="password", placeholder="Minimum 6 caractères")
+                pwd_confirm = st.text_input("🔑 Confirmer le mot de passe", type="password", placeholder="Répétez le mot de passe")
+                
+                st.info("💡 Utilisez votre email pour vous connecter par la suite")
+                
+                submitted = st.form_submit_button("✨ S'inscrire", use_container_width=True, type="primary")
+                
+                if submitted:
+                    if not nom or not prenom or not email or not password:
+                        st.error("❌ Remplissez tous les champs")
+                    elif len(password) < 6:
+                        st.error("❌ Mot de passe trop court (minimum 6 caractères)")
+                    elif password != pwd_confirm:
+                        st.error("❌ Les mots de passe ne correspondent pas")
                     else:
-                        st.error("❌ Cet email est déjà utilisé")
+                        result = db.q('INSERT INTO utilisateurs (nom,prenom,email,password_hash) VALUES (?,?,?,?)',
+                            (nom, prenom, email.lower(), hash_pwd(password)))
+                        if result:
+                            st.success("✅ Compte créé! Vous pouvez en créer un autre ou vous connecter.")
+                            # ✅ Incrémenter la clé → formulaire complètement vide!
+                            st.session_state.register_form_key += 1
+                            st.rerun()
+                        else:
+                            st.error("❌ Cet email est déjà utilisé")
 
 # ========== APPRENANT INTERFACE ==========
 elif st.session_state.logged_in and not st.session_state.is_admin:
@@ -1792,7 +1877,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     key="create_series"
                 )
                 
-                with st.form("create_quiz_form", border=False):
+                with st.form(f"create_quiz_form_{st.session_state.quiz_form_key}", border=False):
                     st.markdown("<h5>Informations du Quiz</h5>", unsafe_allow_html=True)
                     
                     question = st.text_area("📝 Question", height=100, placeholder="Écrivez la question ici...")
@@ -1814,7 +1899,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                         reponses_correctes = st.multiselect(
                             "✅ Sélectionner la/les bonne(s) réponse(s)",
                             ["A", "B", "C", "D"],
-                            default=["A"]
+                            default=[]
                         )
                     
                     with col2:
@@ -1834,13 +1919,15 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                             reponses_str = ",".join(reponses_correctes)
                             if db.q('INSERT INTO quiz (series_id,question,option_a,option_b,option_c,option_d,reponses_correctes,explication) VALUES (?,?,?,?,?,?,?,?)',
                                 (selected_series_create[0], question, option_a, option_b, option_c, option_d, reponses_str, explication)):
-                                st.success("✅ Quiz créé avec succès!")
+                                st.success("✅ Quiz créé! Les champs sont vidés, vous pouvez en créer un autre.")
                                 st.balloons()
+                                # ✅ Incrémenter la clé → formulaire complètement vide!
+                                st.session_state.quiz_form_key += 1
                                 st.rerun()
                             else:
                                 st.error("❌ Erreur lors de la création")
                         else:
-                            st.error("❌ Remplissez tous les champs obligatoires")
+                            st.error("❌ Remplissez tous les champs obligatoires (question, options A-D et réponse correcte)")
     
     # ========== IMPORT ==========
     with admin_tabs[3]:
