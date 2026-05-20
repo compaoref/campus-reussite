@@ -754,26 +754,50 @@ class DB:
             return "URL_INVALIDE"
 
     def _test_connexion(self):
-        # Tester la connexion AVANT de continuer
         try:
             conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
             conn.close()
         except psycopg2.OperationalError as e:
             msg = str(e)
-            # Détecter l'erreur de caractères spéciaux dans le mot de passe
             conseil = ""
-            if "missing key/value" in msg or "invalid dsn" in msg.lower():
+
+            if "Cannot assign requested address" in msg or "port 5432" in msg or "connection refused" in msg.lower():
                 conseil = (
-                    "\n\n⚠️ CAUSE PROBABLE: Votre mot de passe contient des caractères spéciaux\n"
-                    "(%, @, #, &, +, espace, ¨, ^, etc.)\n\n"
-                    "SOLUTION: Changez votre mot de passe Supabase pour un mot de passe\n"
-                    "simple sans caractères spéciaux (ex: MonMotDePasse123)\n\n"
-                    "Pour changer le mot de passe:\n"
-                    "1. Supabase → Project Settings → Database\n"
-                    "2. Section 'Database password' → Reset password\n"
-                    "3. Choisir un mot de passe SANS: % @ # & + ¨ ^ espace\n"
-                    "4. Mettre à jour DATABASE_URL dans les secrets Streamlit"
+                    "\n\n🔴 CAUSE: Vous utilisez le port 5432 qui est BLOQUE sur Streamlit Cloud.\n\n"
+                    "SOLUTION: Utiliser l'URL avec le port 6543 (Connection Pooler).\n\n"
+                    "Dans Supabase:\n"
+                    "  1. Project Settings → Database\n"
+                    "  2. Section 'Connection string'\n"
+                    "  3. Activer 'Use connection pooling'\n"
+                    "  4. Copier l'URL (elle contient: pooler.supabase.com:6543)\n\n"
+                    "Format correct:\n"
+                    "postgresql://postgres.XXXX:MOTDEPASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
                 )
+            elif "missing key/value" in msg or "invalid dsn" in msg.lower():
+                conseil = (
+                    "\n\n🔴 CAUSE: Votre mot de passe contient des caracteres speciaux\n"
+                    "(%, @, #, &, ¨, ^, espace...)\n\n"
+                    "SOLUTION: Changer le mot de passe Supabase pour un mot de passe\n"
+                    "simple sans caracteres speciaux (ex: CampusReussite2025)\n\n"
+                    "Dans Supabase:\n"
+                    "  1. Project Settings → Database\n"
+                    "  2. 'Database password' → Reset password\n"
+                    "  3. Choisir un mot de passe sans: % @ # & ¨ ^ espace"
+                )
+            elif "password authentication failed" in msg:
+                conseil = (
+                    "\n\n🔴 CAUSE: Mot de passe incorrect.\n\n"
+                    "SOLUTION: Verifier que le mot de passe dans DATABASE_URL\n"
+                    "correspond bien a votre mot de passe Supabase."
+                )
+            elif "could not translate host" in msg or "Name or service not known" in msg:
+                conseil = (
+                    "\n\n🔴 CAUSE: Le nom de domaine est introuvable.\n\n"
+                    "SOLUTION: Verifier l'URL copiee depuis Supabase.\n"
+                    "Elle doit ressembler a:\n"
+                    "postgresql://postgres.XXXX:MDP@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+                )
+
             _show_db_error_page(
                 "Connexion a Supabase",
                 msg + conseil,
@@ -781,7 +805,7 @@ class DB:
             )
         except Exception as e:
             _show_db_error_page(
-                "Connexion inattendue",
+                "Erreur inattendue",
                 str(e),
                 self._masquer_url()
             )
@@ -903,6 +927,16 @@ def hash_pwd(p):
 
 def verify_pwd(p, h):
     return hash_pwd(p) == h
+
+def safe(obj, key, defaut="N/A"):
+    """Accès sécurisé à un dict — retourne defaut si obj est None ou clé absente"""
+    if obj is None:
+        return defaut
+    try:
+        val = obj.get(key, defaut) if isinstance(obj, dict) else getattr(obj, key, defaut)
+        return val if val is not None else defaut
+    except Exception:
+        return defaut
 
 # ========== SESSION MANAGEMENT ==========
 def check_session_timeout():
@@ -1385,7 +1419,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
     # Header
     st.markdown(f"""
     <div class="header-main">
-        <h1>👋 Bienvenue {st.session_state.user['prenom']}!</h1>
+        <h1>👋 Bienvenue {safe(st.session_state.user,'prenom','Apprenant')}!</h1>
         <p>Continuez votre apprentissage et progressez</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1429,7 +1463,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                     st.markdown(f"""
                     <div class="card-quiz">
                         <div style="font-size: 3em;">📚</div>
-                        <div class="card-quiz-title">{s['nom']}</div>
+                        <div class="card-quiz-title">{safe(s,'nom')}</div>
                         <div class="card-quiz-desc">{s['description']}</div>
                         <div class="card-quiz-count">🎯 {len(quizzes)} questions</div>
                     </div>
@@ -1571,8 +1605,9 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         if resultats:
             for res in resultats:
                 serie = db.f1('SELECT * FROM series WHERE id=?', (res['series_id'],))
+                # Protection si la série a été supprimée directement en BD
+                nom_serie = safe(serie, 'nom', 'Série supprimée')
                 
-                # Color based on percentage
                 if res['pourcentage'] >= 80:
                     emoji = "🎉"
                 elif res['pourcentage'] >= 60:
@@ -1584,7 +1619,7 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 <div class="card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <h3>{emoji} {serie['nom']}</h3>
+                            <h3>{emoji} {nom_serie}</h3>
                             <p style="color: #666;">Résultat: <strong>{res['score']}/{res['total']}</strong></p>
                             <small>📅 {res['date_test']}</small>
                         </div>
@@ -1733,11 +1768,14 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 for res in resultats_recents:
                     user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (res['utilisateur_id'],))
                     serie = db.f1('SELECT * FROM series WHERE id=?', (res['series_id'],))
+                    # Protection si user ou serie supprimés directement en BD
+                    if not user or not serie:
+                        continue
                     emoji = "🎉" if res['pourcentage'] >= 80 else "👍" if res['pourcentage'] >= 60 else "💪"
                     st.markdown(f"""
                     <div class="admin-card">
-                        <strong>{emoji} {user['prenom']} {user['nom']}</strong><br>
-                        {serie['nom']}<br>
+                        <strong>{emoji} {safe(user,'prenom')} {safe(user,'nom')}</strong><br>
+                        {safe(serie,'nom')}<br>
                         <span style="color: #667eea; font-weight: 700;">{res['pourcentage']:.1f}% ({res['score']}/{res['total']})</span>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1750,11 +1788,13 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             users = db.fa('SELECT * FROM utilisateurs ORDER BY last_activity DESC LIMIT 5')
             if users:
                 for user in users:
+                    if not user:
+                        continue
                     st.markdown(f"""
                     <div class="admin-card">
-                        <strong>{user['prenom']} {user['nom']}</strong><br>
-                        <span style="color: #666; font-size: 0.9em;">{user['email']}</span><br>
-                        <span style="color: #10b981; font-weight: 700;">{'🟢 Actif' if user['status'] == 'actif' else '🔴 Bloqué'}</span>
+                        <strong>{safe(user,'prenom')} {safe(user,'nom')}</strong><br>
+                        <span style="color: #666; font-size: 0.9em;">{safe(user,'email')}</span><br>
+                        <span style="color: #10b981; font-weight: 700;">{'🟢 Actif' if safe(user,'status') == 'actif' else '🔴 Bloqué'}</span>
                     </div>
                     """, unsafe_allow_html=True)
             else:
@@ -2016,10 +2056,10 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         with col1:
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Total</div><div class="stat-number">{len(users)}</div></div>', unsafe_allow_html=True)
         with col2:
-            active = len([u for u in users if u['status'] == 'actif'])
+            active = len([u for u in users if u and safe(u,'status') == 'actif'])
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Actifs</div><div class="stat-number">{active}</div></div>', unsafe_allow_html=True)
         with col3:
-            blocked = len([u for u in users if u['status'] == 'bloqué'])
+            blocked = len([u for u in users if u and safe(u,'status') == 'bloqué'])
             st.markdown(f'<div class="stat-box"><div style="font-size: 0.9em;">Bloqués</div><div class="stat-number">{blocked}</div></div>', unsafe_allow_html=True)
         
         st.write("---")
@@ -2028,14 +2068,15 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             
             with col1:
-                icon = "✅" if u['status'] == 'actif' else "🔒"
-                st.markdown(f"**{icon} {u['prenom']} {u['nom']}**")
-                st.caption(f"📧 {u['email']}")
+                if not u: continue
+                icon = "✅" if safe(u,'status') == 'actif' else "🔒"
+                st.markdown(f"**{icon} {safe(u,'prenom')} {safe(u,'nom')}**")
+                st.caption(f"📧 {safe(u,'email')}")
             
             with col2:
-                if st.button("🔒 Bloquer" if u['status'] == 'actif' else "✅ Débloquer", 
+                if st.button("🔒 Bloquer" if safe(u,'status') == 'actif' else "✅ Débloquer", 
                             key=f"apprenant_block_{u['id']}", use_container_width=True):
-                    new_status = 'bloqué' if u['status'] == 'actif' else 'actif'
+                    new_status = 'bloqué' if safe(u,'status') == 'actif' else 'actif'
                     db.q('UPDATE utilisateurs SET status=? WHERE id=?', (new_status, u['id']))
                     st.rerun()
             
@@ -2096,14 +2137,15 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             col1, col2, col3 = st.columns([2, 1, 1])
             
             with col1:
-                icon = "✅" if admin['status'] == 'actif' else "🔒"
-                st.markdown(f"**{icon} {admin['prenom']} {admin['nom']}**")
-                st.caption(f"📧 {admin['email']}")
+                if not admin: continue
+                icon = "✅" if safe(admin,'status') == 'actif' else "🔒"
+                st.markdown(f"**{icon} {safe(admin,'prenom')} {safe(admin,'nom')}**")
+                st.caption(f"📧 {safe(admin,'email')}")
             
             with col2:
-                if st.button("🔒" if admin['status'] == 'actif' else "✅", 
+                if st.button("🔒" if safe(admin,'status') == 'actif' else "✅", 
                             key=f"admin_block_{admin['id']}", use_container_width=True):
-                    new_status = 'bloqué' if admin['status'] == 'actif' else 'actif'
+                    new_status = 'bloqué' if safe(admin,'status') == 'actif' else 'actif'
                     db.q('UPDATE admins SET status=? WHERE id=?', (new_status, admin['id']))
                     st.rerun()
             
@@ -2179,8 +2221,8 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     with col_b1:
                         st.markdown(f"""
                         <div class="admin-card" style="background:#ffe0e0; border-left-color: #ef4444;">
-                            <strong>🚫 {bu['prenom']} {bu['nom']}</strong><br>
-                            📧 {bu['email']}<br>
+                            <strong>🚫 {safe(bu,'prenom')} {safe(bu,'nom')}</strong><br>
+                            📧 {safe(bu,'email')}<br>
                             ❌ Raison: {bu.get('raison_blocage', 'N/A')}<br>
                             📅 {bu.get('date_blocage', 'N/A')}
                         </div>
@@ -2188,7 +2230,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     with col_b2:
                         if st.button("🔓 Débloquer", key=f"unblock_{bu['id']}", use_container_width=True):
                             db.q('UPDATE utilisateurs SET bloque=0, tentatives_connexion=0, raison_blocage=NULL WHERE id=?', (bu['id'],))
-                            st.success(f"✅ {bu['prenom']} débloqué!")
+                            st.success(f"✅ {safe(bu,'prenom')} débloqué!")
                             st.rerun()
             else:
                 st.success("✅ Aucun compte bloqué en ce moment")
@@ -2238,7 +2280,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.markdown(f"""
                     <div class="card">
                         <strong>{fb['titre']}</strong> - {fb['type']}<br>
-                        <small>📧 {fb['email']}</small><br>
+                        <small>📧 {safe(fb,'email')}</small><br>
                         <p style="margin-top: 10px;">{fb['message']}</p>
                         <small style="color: #999;">📅 {fb['date_feedback']}</small>
                     </div>
