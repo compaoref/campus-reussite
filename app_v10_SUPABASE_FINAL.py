@@ -940,23 +940,53 @@ def safe(obj, key, defaut="N/A"):
 
 # ========== SESSION MANAGEMENT ==========
 def check_session_timeout():
-    if st.session_state.logged_in and st.session_state.user and not st.session_state.is_admin:
+    if not st.session_state.logged_in or not st.session_state.user or st.session_state.is_admin:
+        return
+    try:
         user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (st.session_state.user['id'],))
-        if user:
-            last_activity = datetime.fromisoformat(user['last_activity'])
-            timeout_minutes = user['session_minutes']
-            elapsed = (datetime.now() - last_activity).total_seconds() / 60
-            
-            if elapsed > timeout_minutes:
-                st.session_state.logged_in = False
-                st.session_state.user = None
-                st.warning("⏰ Session expirée!")
-                st.rerun()
+        if not user:
+            return
+        
+        last_activity = user.get('last_activity')
+        
+        # Si last_activity est None ou vide, mettre à jour et continuer
+        if not last_activity:
+            db.q('UPDATE utilisateurs SET last_activity=NOW() WHERE id=?',
+                (user['id'],))
+            return
+        
+        # Convertir en datetime selon le type reçu
+        if isinstance(last_activity, datetime):
+            dt = last_activity.replace(tzinfo=None)
+        elif isinstance(last_activity, str):
+            # Nettoyer le string et parser
+            last_activity = last_activity.split('.')[0].replace('T', ' ').strip()
+            try:
+                dt = datetime.strptime(last_activity, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                dt = datetime.now()
+        else:
+            dt = datetime.now()
+        
+        timeout_minutes = user.get('session_minutes', 120) or 120
+        elapsed = (datetime.now() - dt).total_seconds() / 60
+        
+        if elapsed > timeout_minutes:
+            st.session_state.logged_in = False
+            st.session_state.user = None
+            st.warning("⏰ Session expirée! Reconnectez-vous.")
+            st.rerun()
+    except Exception:
+        # En cas d'erreur, ne pas bloquer la connexion
+        pass
 
 def update_activity():
     if st.session_state.logged_in and st.session_state.user and not st.session_state.is_admin:
-        db.q('UPDATE utilisateurs SET last_activity=? WHERE id=?',
-            (datetime.now(), st.session_state.user['id']))
+        try:
+            db.q('UPDATE utilisateurs SET last_activity=NOW() WHERE id=?',
+                (st.session_state.user['id'],))
+        except Exception:
+            pass
 
 # ========== EXPORT/IMPORT ==========
 def export_database():
@@ -1352,8 +1382,8 @@ if not st.session_state.logged_in:
                         st.error("🚫 Compte bloqué après 3 tentatives. Contactez l\'administrateur.")
                     elif verify_pwd(pwd, user['password_hash']):
                         # Succès - réinitialiser tentatives
-                        db.q('UPDATE utilisateurs SET tentatives_connexion=0, last_activity=? WHERE id=?',
-                            (datetime.now().isoformat(), user['id']))
+                        db.q('UPDATE utilisateurs SET tentatives_connexion=0, last_activity=NOW() WHERE id=?',
+                            (user['id'],))
                         st.session_state.logged_in = True
                         st.session_state.user = user
                         st.session_state.is_admin = False
@@ -1427,23 +1457,35 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
     # Timeout indicator
     user = db.f1('SELECT * FROM utilisateurs WHERE id=?', (st.session_state.user['id'],))
     if user:
-        last_activity = datetime.fromisoformat(user['last_activity'])
-        elapsed = int((datetime.now() - last_activity).total_seconds() / 60)
-        timeout = user['session_minutes']
-        remaining = max(0, timeout - elapsed)
-        
-        if remaining > 10:
-            timeout_class = "timeout-green"
-        elif remaining > 0:
-            timeout_class = "timeout-orange"
-        else:
-            timeout_class = "timeout-red"
-        
-        st.markdown(f"""
-        <div class="timeout-indicator {timeout_class}">
-            ⏱️ {remaining}/{timeout} min restantes
-        </div>
-        """, unsafe_allow_html=True)
+        try:
+            last_activity = user.get('last_activity')
+            if last_activity:
+                if isinstance(last_activity, datetime):
+                    dt = last_activity.replace(tzinfo=None)
+                elif isinstance(last_activity, str):
+                    last_activity = last_activity.split('.')[0].replace('T', ' ').strip()
+                    dt = datetime.strptime(last_activity, '%Y-%m-%d %H:%M:%S')
+                else:
+                    dt = datetime.now()
+                
+                elapsed = int((datetime.now() - dt).total_seconds() / 60)
+                timeout = user.get('session_minutes', 120) or 120
+                remaining = max(0, timeout - elapsed)
+                
+                if remaining > 10:
+                    timeout_class = "timeout-green"
+                elif remaining > 0:
+                    timeout_class = "timeout-orange"
+                else:
+                    timeout_class = "timeout-red"
+                
+                st.markdown(f"""
+                <div class="timeout-indicator {timeout_class}">
+                    ⏱️ {remaining}/{timeout} min restantes
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception:
+            pass
     
     tab1, tab2, tab3 = st.tabs(["📚 Commencer un quiz", "📊 Mes résultats", "📝 Envoyer un feedback"])
     
