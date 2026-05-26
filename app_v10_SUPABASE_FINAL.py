@@ -839,13 +839,25 @@ class DB:
                     niveau_permission TEXT DEFAULT 'secondaire',
                     peut_supprimer_quiz INTEGER DEFAULT 0,
                     peut_ajouter_admin INTEGER DEFAULT 0,
+                    peut_bloquer_users INTEGER DEFAULT 0,
+                    peut_supprimer_users INTEGER DEFAULT 0,
+                    peut_supprimer_admins INTEGER DEFAULT 0,
                     date_creation TIMESTAMP DEFAULT NOW(),
                     status TEXT DEFAULT 'actif'
                 )""",
+                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_bloquer_users INTEGER DEFAULT 0""",
+                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_users INTEGER DEFAULT 0""",
+                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_admins INTEGER DEFAULT 0""",
                 """CREATE TABLE IF NOT EXISTS series (
                     id SERIAL PRIMARY KEY,
                     nom TEXT UNIQUE, description TEXT,
                     nombre_questions INTEGER DEFAULT 0
+                )""",
+                """CREATE TABLE IF NOT EXISTS maintenance (
+                    id SERIAL PRIMARY KEY,
+                    actif INTEGER DEFAULT 0,
+                    message TEXT DEFAULT '',
+                    updated_at TIMESTAMP DEFAULT NOW()
                 )""",
                 """CREATE TABLE IF NOT EXISTS quiz (
                     id SERIAL PRIMARY KEY, series_id INTEGER,
@@ -1323,6 +1335,25 @@ def display_correction(quizzes, quiz_answers, serie):
     
     return score, percentage
 
+# ========== BANNIERE MAINTENANCE ==========
+def afficher_banniere_maintenance():
+    try:
+        maint = db.f1("SELECT * FROM maintenance ORDER BY id DESC LIMIT 1")
+        if maint and maint.get('actif', 0) == 1 and maint.get('message', '').strip():
+            msg = maint['message']
+            st.markdown(
+                "<div style='background:linear-gradient(135deg,#f39c12,#e67e22);color:white;"
+                "padding:18px 24px;border-radius:12px;margin-bottom:20px;text-align:center;"
+                "font-size:1rem;font-weight:700;box-shadow:0 4px 15px rgba(243,156,18,0.4);'>"
+                f"&#x1F527; <b>Maintenance en cours</b> &mdash; {msg}"
+                "</div>",
+                unsafe_allow_html=True
+            )
+    except Exception:
+        pass
+
+afficher_banniere_maintenance()
+
 # ========== LOGIN PAGE ==========
 if not st.session_state.logged_in:
     
@@ -1732,8 +1763,11 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     # Récupérer les permissions de l'admin connecté
     admin_connecte = db.f1("SELECT * FROM admins WHERE email=?", (st.session_state.user.get('email',''),)) if st.session_state.user.get('id', 0) != 0 else None
     est_admin_principal = st.session_state.user.get('id', 0) == 0 or (admin_connecte and admin_connecte.get('niveau_permission') == 'principal')
-    peut_supprimer = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_quiz', 0) == 1)
-    peut_ajouter_admin = est_admin_principal or (admin_connecte and admin_connecte.get('peut_ajouter_admin', 0) == 1)
+    peut_supprimer       = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_quiz', 0) == 1)
+    peut_ajouter_admin   = est_admin_principal or (admin_connecte and admin_connecte.get('peut_ajouter_admin', 0) == 1)
+    peut_bloquer_users   = est_admin_principal or (admin_connecte and admin_connecte.get('peut_bloquer_users', 0) == 1)
+    peut_suppr_users     = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_users', 0) == 1)
+    peut_suppr_admins    = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_admins', 0) == 1)
     
     if not est_admin_principal:
         st.warning("ℹ️ Vous êtes connecté en tant qu'administrateur secondaire — certaines fonctionnalités sont restreintes.")
@@ -1748,6 +1782,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         "👨‍💼 Administrateurs",
         "💾 Base Données",
         "🔧 Maintenance",
+        "📢 Panneau Maintenance",
         "💬 Feedback"
     ])
     
@@ -2116,11 +2151,14 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 st.caption(f"📧 {safe(u,'email')}")
             
             with col2:
-                if st.button("🔒 Bloquer" if safe(u,'status') == 'actif' else "✅ Débloquer", 
-                            key=f"apprenant_block_{u['id']}", use_container_width=True):
-                    new_status = 'bloqué' if safe(u,'status') == 'actif' else 'actif'
-                    db.q('UPDATE utilisateurs SET status=? WHERE id=?', (new_status, u['id']))
-                    st.rerun()
+                if peut_bloquer_users:
+                    if st.button("🔒 Bloquer" if safe(u,'status') == 'actif' else "✅ Débloquer", 
+                                key=f"apprenant_block_{u['id']}", use_container_width=True):
+                        new_status = 'bloqué' if safe(u,'status') == 'actif' else 'actif'
+                        db.q('UPDATE utilisateurs SET status=? WHERE id=?', (new_status, u['id']))
+                        st.rerun()
+                else:
+                    st.markdown("<small style='color:#999;'>🔒 Non autorisé</small>", unsafe_allow_html=True)
             
             with col3:
                 new_dur = st.number_input("Min", 5, 1440, u['session_minutes'], 
@@ -2130,9 +2168,12 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.rerun()
             
             with col4:
-                if st.button("🗑️ Supprimer", key=f"apprenant_del_{u['id']}", use_container_width=True):
-                    db.q('DELETE FROM utilisateurs WHERE id=?', (u['id'],))
-                    st.rerun()
+                if peut_suppr_users:
+                    if st.button("🗑️ Supprimer", key=f"apprenant_del_{u['id']}", use_container_width=True):
+                        db.q('DELETE FROM utilisateurs WHERE id=?', (u['id'],))
+                        st.rerun()
+                else:
+                    st.markdown("<small style='color:#999;'>🔒 Non autorisé</small>", unsafe_allow_html=True)
             
             st.divider()
     
@@ -2141,30 +2182,60 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         st.subheader("👨‍💼 Gestion des Administrateurs")
         
         if peut_ajouter_admin:
-            with st.expander("➕ Créer un nouvel administrateur"):
-                nom_admin = st.text_input("Nom")
-                prenom_admin = st.text_input("Prénom")
-                email_admin = st.text_input("Email")
-                pwd_admin = st.text_input("Mot de passe (min 8 caractères)", type="password")
-                pwd_admin_confirm = st.text_input("Confirmer le mot de passe", type="password")
+            with st.form(f"create_admin_form_{st.session_state.admin_form_key}", border=False):
+                st.markdown("#### ➕ Créer un nouvel administrateur")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    nom_admin    = st.text_input("Nom *")
+                    email_admin  = st.text_input("Email *")
+                    pwd_admin    = st.text_input("Mot de passe (min 8 car.) *", type="password")
+                with col_b:
+                    prenom_admin     = st.text_input("Prénom *")
+                    pwd_admin_confirm = st.text_input("Confirmer le mot de passe *", type="password")
                 
-                niv_perm = st.selectbox("Niveau de permission", 
-                    ["secondaire", "principal"],
-                    help="Secondaire: ne peut que ajouter/importer quizzes. Principal: tous les droits.")
+                st.markdown("---")
+                st.markdown("#### 🔐 Accès autorisés")
+                st.caption("Cochez uniquement ce que cet admin peut faire")
                 
-                peut_sup = st.checkbox("Peut supprimer des quizzes", value=False)
+                pc1, pc2, pc3 = st.columns(3)
+                with pc1:
+                    p_quiz_add  = st.checkbox("➕ Ajouter des quiz",     value=True)
+                    p_quiz_imp  = st.checkbox("📥 Importer des quiz",    value=True)
+                    p_quiz_del  = st.checkbox("🗑️ Supprimer des quiz",   value=False)
+                with pc2:
+                    p_user_view = st.checkbox("👁️ Voir les apprenants",  value=True)
+                    p_user_blk  = st.checkbox("🔒 Bloquer/Débloquer apprenants", value=False)
+                    p_user_del  = st.checkbox("🗑️ Supprimer apprenants", value=False)
+                with pc3:
+                    p_adm_add   = st.checkbox("👨‍💼 Ajouter des admins",  value=False)
+                    p_adm_del   = st.checkbox("🗑️ Supprimer des admins", value=False)
+                    p_maintenance = st.checkbox("🔧 Gérer la maintenance", value=False)
                 
-                if st.button("Créer l'administrateur", use_container_width=True, type="primary"):
+                submitted_admin = st.form_submit_button("✅ Créer l'administrateur", use_container_width=True, type="primary")
+                
+                if submitted_admin:
                     if len(pwd_admin) < 8:
-                        st.error("❌ Mot de passe trop court (minimum 8)")
+                        st.error("❌ Mot de passe trop court (minimum 8 caractères)")
                     elif pwd_admin != pwd_admin_confirm:
                         st.error("❌ Les mots de passe ne correspondent pas")
                     elif not all([nom_admin, prenom_admin, email_admin]):
-                        st.error("❌ Remplissez tous les champs")
+                        st.error("❌ Remplissez tous les champs obligatoires (*)")
                     else:
-                        if db.q('INSERT INTO admins (email,password_hash,nom,prenom,niveau_permission,peut_supprimer_quiz,peut_ajouter_admin) VALUES (?,?,?,?,?,?,?)',
-                            (email_admin.lower(), hash_pwd(pwd_admin), nom_admin, prenom_admin, niv_perm, 1 if peut_sup else 0, 1 if niv_perm == 'principal' else 0)):
-                            st.success(f"✅ Admin créé: {email_admin}")
+                        ok = db.q(
+                            'INSERT INTO admins (email,password_hash,nom,prenom,niveau_permission,'
+                            'peut_supprimer_quiz,peut_ajouter_admin,peut_bloquer_users,'
+                            'peut_supprimer_users,peut_supprimer_admins) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                            (email_admin.lower(), hash_pwd(pwd_admin), nom_admin, prenom_admin,
+                             'secondaire',
+                             1 if p_quiz_del  else 0,
+                             1 if p_adm_add   else 0,
+                             1 if p_user_blk  else 0,
+                             1 if p_user_del  else 0,
+                             1 if p_adm_del   else 0)
+                        )
+                        if ok:
+                            st.success(f"✅ Admin créé avec succès: {email_admin}")
+                            st.session_state.admin_form_key += 1
                             st.rerun()
                         else:
                             st.error("❌ Cet email est déjà utilisé")
@@ -2185,16 +2256,22 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 st.caption(f"📧 {safe(admin,'email')}")
             
             with col2:
-                if st.button("🔒" if safe(admin,'status') == 'actif' else "✅", 
-                            key=f"admin_block_{admin['id']}", use_container_width=True):
-                    new_status = 'bloqué' if safe(admin,'status') == 'actif' else 'actif'
-                    db.q('UPDATE admins SET status=? WHERE id=?', (new_status, admin['id']))
-                    st.rerun()
+                if est_admin_principal:
+                    if st.button("🔒" if safe(admin,'status') == 'actif' else "✅", 
+                                key=f"admin_block_{admin['id']}", use_container_width=True):
+                        new_status = 'bloqué' if safe(admin,'status') == 'actif' else 'actif'
+                        db.q('UPDATE admins SET status=? WHERE id=?', (new_status, admin['id']))
+                        st.rerun()
+                else:
+                    st.markdown("<small style='color:#999;'>🔒 Non autorisé</small>", unsafe_allow_html=True)
             
             with col3:
-                if st.button("🗑️", key=f"admin_del_{admin['id']}", use_container_width=True):
-                    db.q('DELETE FROM admins WHERE id=?', (admin['id'],))
-                    st.rerun()
+                if peut_suppr_admins:
+                    if st.button("🗑️", key=f"admin_del_{admin['id']}", use_container_width=True):
+                        db.q('DELETE FROM admins WHERE id=?', (admin['id'],))
+                        st.rerun()
+                else:
+                    st.markdown("<small style='color:#999;'>🔒</small>", unsafe_allow_html=True)
             
             st.divider()
     
@@ -2249,6 +2326,66 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             st.metric("Feedbacks", len(db.fa('SELECT * FROM feedback')))
     
     # ========== MAINTENANCE ==========
+    with admin_tabs[8]:
+        st.markdown("<h2 style='color:#f39c12;'>📢 Panneau Maintenance Plateforme</h2>", unsafe_allow_html=True)
+        st.markdown("Activez la maintenance et écrivez un message visible par **tous les utilisateurs** sur la plateforme.")
+        st.divider()
+        
+        maint_data = db.f1("SELECT * FROM maintenance ORDER BY id DESC LIMIT 1")
+        est_actif  = (maint_data.get('actif', 0) == 1) if maint_data else False
+        msg_actuel = maint_data.get('message', '') if maint_data else ''
+        
+        col_m1, col_m2 = st.columns([1, 3])
+        with col_m1:
+            if est_actif:
+                st.markdown("<div style='background:#f39c12;color:white;padding:20px;border-radius:12px;text-align:center;font-weight:700;font-size:1.1em;'>🔧 EN MAINTENANCE</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='background:#27ae60;color:white;padding:20px;border-radius:12px;text-align:center;font-weight:700;font-size:1.1em;'>✅ EN LIGNE</div>", unsafe_allow_html=True)
+        with col_m2:
+            if msg_actuel:
+                st.info(f"📢 Message actuel: **{msg_actuel}**")
+            else:
+                st.caption("Aucun message configuré")
+        
+        st.divider()
+        
+        with st.form("form_maintenance_panel", border=False):
+            nouveau_msg = st.text_area(
+                "✏️ Message affiché aux utilisateurs",
+                value=msg_actuel, height=120,
+                placeholder="Ex: Plateforme en maintenance pour amélioration. Revenez dans 30 minutes. Merci!"
+            )
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                lbl = "🔧 Activer Maintenance" if not est_actif else "✅ Désactiver Maintenance"
+                btn_toggle = st.form_submit_button(lbl, use_container_width=True, type="primary")
+            with col_b2:
+                btn_save = st.form_submit_button("💾 Sauvegarder message", use_container_width=True)
+            
+            if btn_toggle:
+                if not est_actif and not nouveau_msg.strip():
+                    st.error("❌ Écrivez un message avant d'activer la maintenance!")
+                else:
+                    nouvel_etat = 0 if est_actif else 1
+                    if maint_data:
+                        db.q("UPDATE maintenance SET actif=?, message=?, updated_at=NOW() WHERE id=?",
+                            (nouvel_etat, nouveau_msg, maint_data['id']))
+                    else:
+                        db.q("INSERT INTO maintenance (actif, message) VALUES (?, ?)", (nouvel_etat, nouveau_msg))
+                    if nouvel_etat == 1:
+                        st.success("🔧 Maintenance ACTIVÉE — message visible pour tous!")
+                    else:
+                        st.success("✅ Maintenance DÉSACTIVÉE — plateforme en ligne!")
+                    st.rerun()
+            
+            if btn_save:
+                if maint_data:
+                    db.q("UPDATE maintenance SET message=? WHERE id=?", (nouveau_msg, maint_data['id']))
+                else:
+                    db.q("INSERT INTO maintenance (actif, message) VALUES (0, ?)", (nouveau_msg,))
+                st.success("💾 Message sauvegardé!")
+                st.rerun()
+
     with admin_tabs[7]:
         st.markdown("<h2 style='color: #667eea;'>🔧 Interface de Maintenance</h2>", unsafe_allow_html=True)
         
@@ -2309,7 +2446,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.success("✅ Tentatives réinitialisées!")
     
     # ========== FEEDBACK ==========
-    with admin_tabs[8]:
+    with admin_tabs[9]:
         st.subheader("💬 Feedbacks des Apprenants")
         
         feedbacks = db.fa('SELECT * FROM feedback ORDER BY date_feedback DESC')
