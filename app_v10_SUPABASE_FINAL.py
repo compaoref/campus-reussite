@@ -1359,7 +1359,7 @@ if not st.session_state.logged_in:
                     pass
                 
                 # Vérifier Admins en BD
-                admin = db.f1('SELECT * FROM admins WHERE email=? AND status="actif"', (email.lower(),))
+                admin = db.f1("SELECT * FROM admins WHERE email=? AND status='actif'", (email.lower(),))
                 if admin and verify_pwd(pwd, admin['password_hash']):
                     st.session_state.logged_in = True
                     st.session_state.is_admin = True
@@ -1730,7 +1730,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     """, unsafe_allow_html=True)
     
     # Récupérer les permissions de l'admin connecté
-    admin_connecte = db.f1('SELECT * FROM admins WHERE email=?', (st.session_state.user.get('email',''),)) if st.session_state.user.get('id', 0) != 0 else None
+    admin_connecte = db.f1("SELECT * FROM admins WHERE email=?", (st.session_state.user.get('email',''),)) if st.session_state.user.get('id', 0) != 0 else None
     est_admin_principal = st.session_state.user.get('id', 0) == 0 or (admin_connecte and admin_connecte.get('niveau_permission') == 'principal')
     peut_supprimer = est_admin_principal or (admin_connecte and admin_connecte.get('peut_supprimer_quiz', 0) == 1)
     peut_ajouter_admin = est_admin_principal or (admin_connecte and admin_connecte.get('peut_ajouter_admin', 0) == 1)
