@@ -634,18 +634,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ========== DATABASE CLASS - SUPABASE/POSTGRESQL ==========
+# ========== DATABASE CLASS - SUPABASE + CONNECTION POOL ==========
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pg_pool
 
 def _show_db_error_page(etape, message, url_partielle=""):
-    """Affiche une page de diagnostic claire quand la BD ne répond pas"""
     st.markdown("""
     <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:15px;padding:30px;margin:20px 0;">
         <h2 style="color:#856404;">⚠️ Problème de Connexion Base de Données</h2>
     </div>
     """, unsafe_allow_html=True)
-
     col1, col2 = st.columns(2)
     with col1:
         st.error(f"**Etape échouée:** {etape}")
@@ -653,189 +652,126 @@ def _show_db_error_page(etape, message, url_partielle=""):
     with col2:
         st.info("**URL détectée (masquée):**")
         st.code(url_partielle if url_partielle else "Aucune URL trouvée", language="text")
-
     st.markdown("---")
     st.markdown("### Checklist de diagnostic")
-
     checks = {
-        "DATABASE_URL dans les secrets Streamlit": "Aller sur share.streamlit.io → votre app → Settings → Secrets",
-        "Format correct de l'URL": "postgresql://postgres.XXXX:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres",
-        "Mot de passe sans caractères spéciaux (@, #, %)": "Si le mdp contient ces caractères, les encoder: @ → %40",
+        "DATABASE_URL dans les secrets Streamlit": "share.streamlit.io → votre app → Settings → Secrets",
+        "Port 6543 (pas 5432)": "Supabase → Project Settings → Database → Connection string → Use connection pooling",
+        "Mot de passe sans caractères spéciaux": "Supabase → Project Settings → Database → Reset password",
         "Projet Supabase actif (pas en pause)": "Aller sur supabase.com → vérifier que le projet n'est pas en pause",
-        "psycopg2-binary dans requirements.txt": "Le fichier requirements.txt doit contenir: psycopg2-binary>=2.9.0",
     }
-
     for check, solution in checks.items():
         with st.expander(f"Vérifier: {check}"):
             st.write(f"**Solution:** {solution}")
-
-    st.markdown("---")
-    st.markdown("### Comment récupérer la bonne URL Supabase")
-    st.markdown("""
-    1. Aller sur **https://supabase.com** → votre projet
-    2. Cliquer **Project Settings** (icône engrenage en bas à gauche)
-    3. Cliquer **Database** dans le menu
-    4. Descendre jusqu'à **Connection string**
-    5. Choisir l'onglet **URI**
-    6. Copier l'URL complète
-    7. Remplacer `[YOUR-PASSWORD]` par votre vrai mot de passe
-    """)
-
-    st.markdown("### Coller dans Streamlit Cloud Secrets")
-    st.code("""DATABASE_URL = "postgresql://postgres.XXXX:VOTRE_MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-
-[admins]
-"admin@campus.com" = "votre_mot_de_passe_admin"
-""", language="toml")
-
-    if st.button("Rafraichir pour retenter la connexion", type="primary", use_container_width=True):
+    st.markdown("### Format URL correct")
+    st.code('DATABASE_URL = "postgresql://postgres.XXXX:MOTDEPASSE@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"', language="toml")
+    if st.button("Rafraichir pour retenter", type="primary", use_container_width=True):
         st.rerun()
-
     st.stop()
+
+
+@st.cache_resource
+def get_pool(url: str):
+    """
+    Crée UN SEUL pool de connexions pour toute la session Streamlit.
+    st.cache_resource garantit qu'il est créé une seule fois et réutilisé.
+    minconn=1, maxconn=5 — suffisant pour une app Streamlit.
+    """
+    try:
+        p = pg_pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=5,
+            dsn=url,
+            sslmode="require",
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
+        )
+        return p
+    except psycopg2.OperationalError as e:
+        msg = str(e)
+        conseil = ""
+        if "Cannot assign requested address" in msg or ":5432" in msg:
+            conseil = "\n\nCAUSE: Port 5432 bloqué. Utiliser port 6543 (pooler Supabase)."
+        elif "password authentication" in msg:
+            conseil = "\n\nCAUSE: Mot de passe incorrect dans DATABASE_URL."
+        elif "missing key/value" in msg or "invalid dsn" in msg.lower():
+            conseil = "\n\nCAUSE: Caractères spéciaux dans le mot de passe. Changer le mdp."
+        _show_db_error_page("Création du pool de connexions", msg + conseil, url[:40] + "...")
+    except Exception as e:
+        _show_db_error_page("Erreur inattendue (pool)", str(e), url[:40] + "...")
 
 
 class DB:
     def __init__(self):
-        self._url = self._get_url()
-        self._test_connexion()
+        self._url  = self._get_url()
+        self._pool = get_pool(self._url)
         self.init()
 
     def _get_url(self):
-        # Vérifier que DATABASE_URL existe dans secrets
         if "DATABASE_URL" not in st.secrets:
             _show_db_error_page(
-                "Lecture du secret DATABASE_URL",
-                "La clé DATABASE_URL est introuvable dans vos secrets Streamlit.\nVous devez l'ajouter dans Settings → Secrets.",
-                "AUCUNE URL CONFIGUREE"
+                "Lecture DATABASE_URL",
+                "Clé DATABASE_URL introuvable dans Settings → Secrets.",
+                "AUCUNE URL"
             )
         url = st.secrets["DATABASE_URL"]
         if not url or not url.startswith("postgresql"):
-            _show_db_error_page(
-                "Validation du format DATABASE_URL",
-                f"L'URL ne commence pas par 'postgresql'.\nValeur actuelle: {url[:30]}...",
-                url[:40] + "..." if len(url) > 40 else url
-            )
-        # ✅ Encoder automatiquement les caractères spéciaux du mot de passe
-        url = self._encoder_url(url)
-        return url
+            _show_db_error_page("Format URL", f"L'URL doit commencer par 'postgresql'.\nActuel: {url[:40]}", url[:40])
+        return self._encoder_url(url)
 
     def _encoder_url(self, url):
-        """Encode automatiquement les caractères spéciaux dans le mot de passe de l'URL"""
         from urllib.parse import quote, urlparse, urlunparse
         try:
-            # Parser l'URL
             parsed = urlparse(url)
-            # Récupérer le mot de passe brut
-            mdp_brut = parsed.password
-            if mdp_brut:
-                # Encoder le mot de passe (tous les caractères spéciaux)
-                mdp_encode = quote(mdp_brut, safe="")
-                # Reconstruire l'URL avec le mot de passe encodé
-                netloc = parsed.netloc.replace(
-                    f":{mdp_brut}@",
-                    f":{mdp_encode}@"
-                )
-                url = urlunparse((
-                    parsed.scheme, netloc, parsed.path,
-                    parsed.params, parsed.query, parsed.fragment
-                ))
-            return url
+            if parsed.password:
+                mdp = quote(parsed.password, safe="")
+                netloc = parsed.netloc.replace(f":{parsed.password}@", f":{mdp}@")
+                url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
         except Exception:
-            # Si l'encodage échoue, retourner l'URL originale
-            return url
+            pass
+        return url
 
     def _masquer_url(self):
-        # Masquer le mot de passe pour l'affichage
         try:
             parts = self._url.split("@")
-            avant = parts[0].split(":")
-            return f"{avant[0]}:****@{parts[1]}"
+            return f"{parts[0].split(':')[0]}:****@{parts[1]}"
         except Exception:
             return "URL_INVALIDE"
 
-    def _test_connexion(self):
-        try:
-            conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
-            conn.close()
-        except psycopg2.OperationalError as e:
-            msg = str(e)
-            conseil = ""
-
-            if "Cannot assign requested address" in msg or "port 5432" in msg or "connection refused" in msg.lower():
-                conseil = (
-                    "\n\n🔴 CAUSE: Vous utilisez le port 5432 qui est BLOQUE sur Streamlit Cloud.\n\n"
-                    "SOLUTION: Utiliser l'URL avec le port 6543 (Connection Pooler).\n\n"
-                    "Dans Supabase:\n"
-                    "  1. Project Settings → Database\n"
-                    "  2. Section 'Connection string'\n"
-                    "  3. Activer 'Use connection pooling'\n"
-                    "  4. Copier l'URL (elle contient: pooler.supabase.com:6543)\n\n"
-                    "Format correct:\n"
-                    "postgresql://postgres.XXXX:MOTDEPASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-                )
-            elif "missing key/value" in msg or "invalid dsn" in msg.lower():
-                conseil = (
-                    "\n\n🔴 CAUSE: Votre mot de passe contient des caracteres speciaux\n"
-                    "(%, @, #, &, ¨, ^, espace...)\n\n"
-                    "SOLUTION: Changer le mot de passe Supabase pour un mot de passe\n"
-                    "simple sans caracteres speciaux (ex: CampusReussite2025)\n\n"
-                    "Dans Supabase:\n"
-                    "  1. Project Settings → Database\n"
-                    "  2. 'Database password' → Reset password\n"
-                    "  3. Choisir un mot de passe sans: % @ # & ¨ ^ espace"
-                )
-            elif "password authentication failed" in msg:
-                conseil = (
-                    "\n\n🔴 CAUSE: Mot de passe incorrect.\n\n"
-                    "SOLUTION: Verifier que le mot de passe dans DATABASE_URL\n"
-                    "correspond bien a votre mot de passe Supabase."
-                )
-            elif "could not translate host" in msg or "Name or service not known" in msg:
-                conseil = (
-                    "\n\n🔴 CAUSE: Le nom de domaine est introuvable.\n\n"
-                    "SOLUTION: Verifier l'URL copiee depuis Supabase.\n"
-                    "Elle doit ressembler a:\n"
-                    "postgresql://postgres.XXXX:MDP@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-                )
-
-            _show_db_error_page(
-                "Connexion a Supabase",
-                msg + conseil,
-                self._masquer_url()
-            )
-        except Exception as e:
-            _show_db_error_page(
-                "Erreur inattendue",
-                str(e),
-                self._masquer_url()
-            )
-
     def _conn(self):
+        """Emprunte une connexion du pool"""
         try:
-            conn = psycopg2.connect(self._url, sslmode="require", connect_timeout=10)
-            return conn
+            return self._pool.getconn()
         except Exception as e:
-            _show_db_error_page("Connexion BD perdue", str(e), self._masquer_url())
+            _show_db_error_page("Connexion pool", str(e), self._masquer_url())
+
+    def _release(self, conn):
+        """Remet la connexion dans le pool"""
+        try:
+            self._pool.putconn(conn)
+        except Exception:
+            pass
 
     def init(self):
+        conn = self._conn()
         try:
-            conn = self._conn()
             c = conn.cursor()
-            tables_sql = [
+            tables = [
                 """CREATE TABLE IF NOT EXISTS utilisateurs (
-                    id SERIAL PRIMARY KEY,
-                    nom TEXT, prenom TEXT, email TEXT UNIQUE,
-                    password_hash TEXT, role TEXT DEFAULT 'apprenant',
-                    status TEXT DEFAULT 'actif', session_minutes INTEGER DEFAULT 120,
+                    id SERIAL PRIMARY KEY, nom TEXT, prenom TEXT,
+                    email TEXT UNIQUE, password_hash TEXT,
+                    role TEXT DEFAULT 'apprenant', status TEXT DEFAULT 'actif',
+                    session_minutes INTEGER DEFAULT 120,
                     last_activity TIMESTAMP DEFAULT NOW(),
                     tentatives_connexion INTEGER DEFAULT 0,
                     bloque INTEGER DEFAULT 0,
-                    date_blocage TEXT, raison_blocage TEXT
-                )""",
+                    date_blocage TEXT, raison_blocage TEXT)""",
                 """CREATE TABLE IF NOT EXISTS admins (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT UNIQUE, password_hash TEXT,
-                    nom TEXT, prenom TEXT,
+                    id SERIAL PRIMARY KEY, email TEXT UNIQUE,
+                    password_hash TEXT, nom TEXT, prenom TEXT,
                     niveau_permission TEXT DEFAULT 'secondaire',
                     peut_supprimer_quiz INTEGER DEFAULT 0,
                     peut_ajouter_admin INTEGER DEFAULT 0,
@@ -843,94 +779,88 @@ class DB:
                     peut_supprimer_users INTEGER DEFAULT 0,
                     peut_supprimer_admins INTEGER DEFAULT 0,
                     date_creation TIMESTAMP DEFAULT NOW(),
-                    status TEXT DEFAULT 'actif'
-                )""",
-                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_bloquer_users INTEGER DEFAULT 0""",
-                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_users INTEGER DEFAULT 0""",
-                """ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_admins INTEGER DEFAULT 0""",
+                    status TEXT DEFAULT 'actif')""",
+                "ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_bloquer_users INTEGER DEFAULT 0",
+                "ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_users INTEGER DEFAULT 0",
+                "ALTER TABLE admins ADD COLUMN IF NOT EXISTS peut_supprimer_admins INTEGER DEFAULT 0",
                 """CREATE TABLE IF NOT EXISTS series (
-                    id SERIAL PRIMARY KEY,
-                    nom TEXT UNIQUE, description TEXT,
-                    nombre_questions INTEGER DEFAULT 0
-                )""",
+                    id SERIAL PRIMARY KEY, nom TEXT UNIQUE,
+                    description TEXT, nombre_questions INTEGER DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS maintenance (
-                    id SERIAL PRIMARY KEY,
-                    actif INTEGER DEFAULT 0,
-                    message TEXT DEFAULT '',
-                    updated_at TIMESTAMP DEFAULT NOW()
-                )""",
+                    id SERIAL PRIMARY KEY, actif INTEGER DEFAULT 0,
+                    message TEXT DEFAULT '', updated_at TIMESTAMP DEFAULT NOW())""",
                 """CREATE TABLE IF NOT EXISTS quiz (
                     id SERIAL PRIMARY KEY, series_id INTEGER,
                     question TEXT, option_a TEXT, option_b TEXT,
                     option_c TEXT, option_d TEXT,
-                    reponses_correctes TEXT, explication TEXT
-                )""",
+                    reponses_correctes TEXT, explication TEXT)""",
                 """CREATE TABLE IF NOT EXISTS resultats (
-                    id SERIAL PRIMARY KEY,
-                    utilisateur_id INTEGER, series_id INTEGER,
-                    score INTEGER, total INTEGER, pourcentage REAL,
-                    date_test TIMESTAMP DEFAULT NOW()
-                )""",
+                    id SERIAL PRIMARY KEY, utilisateur_id INTEGER,
+                    series_id INTEGER, score INTEGER, total INTEGER,
+                    pourcentage REAL, date_test TIMESTAMP DEFAULT NOW())""",
                 """CREATE TABLE IF NOT EXISTS feedback (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT, titre TEXT, message TEXT,
-                    type TEXT, date_feedback TIMESTAMP DEFAULT NOW()
-                )""",
+                    id SERIAL PRIMARY KEY, email TEXT, titre TEXT,
+                    message TEXT, type TEXT,
+                    date_feedback TIMESTAMP DEFAULT NOW())""",
                 """CREATE TABLE IF NOT EXISTS reponses_quiz (
-                    id SERIAL PRIMARY KEY,
-                    resultat_id INTEGER, quiz_id INTEGER,
-                    reponse_utilisateur TEXT, reponses_correctes TEXT
-                )""",
+                    id SERIAL PRIMARY KEY, resultat_id INTEGER,
+                    quiz_id INTEGER, reponse_utilisateur TEXT,
+                    reponses_correctes TEXT)""",
             ]
-            for sql in tables_sql:
+            for sql in tables:
                 c.execute(sql)
             conn.commit()
-            conn.close()
         except Exception as e:
-            _show_db_error_page(
-                "Creation des tables",
-                str(e),
-                self._masquer_url()
-            )
+            conn.rollback()
+            _show_db_error_page("Création des tables", str(e), self._masquer_url())
+        finally:
+            self._release(conn)
 
     def q(self, sql, p=()):
+        """INSERT / UPDATE / DELETE — retourne True/False"""
         sql = sql.replace("?", "%s")
+        conn = self._conn()
         try:
-            conn = self._conn()
             c = conn.cursor()
             c.execute(sql, p)
             conn.commit()
-            conn.close()
             return True
         except Exception as e:
-            st.warning(f"Erreur BD (ecriture): {str(e)[:120]}")
+            conn.rollback()
+            st.warning(f"Erreur BD (écriture): {str(e)[:150]}")
             return False
+        finally:
+            self._release(conn)
 
     def f1(self, sql, p=()):
+        """Retourne une seule ligne (dict)"""
         sql = sql.replace("?", "%s")
+        conn = self._conn()
         try:
-            conn = self._conn()
             c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             c.execute(sql, p)
             r = c.fetchone()
-            conn.close()
             return dict(r) if r else None
         except Exception as e:
-            st.warning(f"Erreur BD (lecture): {str(e)[:120]}")
+            st.warning(f"Erreur BD (lecture): {str(e)[:150]}")
             return None
+        finally:
+            self._release(conn)
 
     def fa(self, sql, p=()):
+        """Retourne toutes les lignes (liste de dicts)"""
         sql = sql.replace("?", "%s")
+        conn = self._conn()
         try:
-            conn = self._conn()
             c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             c.execute(sql, p)
             rows = c.fetchall()
-            conn.close()
             return [dict(r) for r in rows] if rows else []
         except Exception as e:
-            st.warning(f"Erreur BD (liste): {str(e)[:120]}")
+            st.warning(f"Erreur BD (liste): {str(e)[:150]}")
             return []
+        finally:
+            self._release(conn)
 
 db = DB()
 
