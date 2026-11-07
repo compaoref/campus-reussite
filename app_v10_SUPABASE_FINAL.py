@@ -1,13 +1,12 @@
 """
 🎓 CAMPUS RÉUSSITE v11 — SÉCURISÉ + ABONNEMENTS ORANGE MONEY
-✅ bcrypt (migration auto des anciens hash SHA-256)
+✅ Hash PBKDF2 (200 000 itérations, zéro dépendance) + migration auto SHA-256
 ✅ Permissions admin réelles (self-delete bloqué, onglets conditionnels)
 ✅ Essai gratuit 14 jours paramétrable
 ✅ Paywall avec paiement Orange Money manuel (validation admin)
 ✅ Offres paramétrables (montant ↔ durée)
 ✅ Dashboard apprenant + Top 10
 ✅ Fix : correction quiz ne s'affiche plus sous le quiz
-✅ Bug fixes : session NULL, timeout, feedback, séries, etc.
 """
 
 import streamlit as st
@@ -15,7 +14,6 @@ import pandas as pd
 import json
 import hashlib
 import hmac
-import bcrypt
 import time
 import os
 from datetime import datetime, timedelta
@@ -27,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ========== CSS (inchangé, ajout de quelques styles paywall) ==========
+# ========== CSS ==========
 st.markdown("""
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -114,15 +112,10 @@ st.markdown("""
     .stat-box-label { font-size:0.95em; opacity:0.9; }
     .card { background:white; padding:20px; border-radius:12px; margin:15px 0;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-    /* Paywall */
     .paywall-om { background: linear-gradient(135deg,#ff7900,#ff9500); color:white;
                   padding:30px; border-radius:15px; text-align:center; margin:15px 0;
                   box-shadow: 0 10px 30px rgba(255,121,0,0.3); }
     .paywall-om-num { font-size:2.2em; font-weight:900; letter-spacing:2px; margin:15px 0; }
-    .access-badge { display:inline-block; padding:8px 18px; border-radius:20px;
-                    font-weight:700; margin:5px; }
-    .access-ok { background:#d1fae5; color:#065f46; }
-    .access-exp { background:#fee2e2; color:#7f1d1d; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -305,7 +298,6 @@ class DB:
             for sql in tables:
                 c.execute(sql)
 
-            # Données par défaut
             c.execute("SELECT 1 FROM parametres WHERE cle='orange_money_numero'")
             if not c.fetchone():
                 for k, v in [
@@ -321,7 +313,6 @@ class DB:
                     c.execute("INSERT INTO offres (nom,montant,duree_jours) VALUES (%s,%s,%s)",
                               (nom, montant, duree))
 
-            # Migration : essai pour les anciens comptes sans abonnement
             c.execute("""INSERT INTO abonnements (utilisateur_id, date_fin, type)
                          SELECT u.id, NOW() + INTERVAL '14 days', 'essai'
                          FROM utilisateurs u
@@ -382,27 +373,41 @@ class DB:
 db = DB()
 
 
-# ========== HASHING (bcrypt + migration) ==========
+# ========== HASHING (PBKDF2-HMAC-SHA256 + migration) ==========
 def hash_pwd(p):
-    return bcrypt.hashpw(p.encode(), bcrypt.gensalt(rounds=12)).decode()
+    """PBKDF2-HMAC-SHA256, 200 000 itérations, sel aléatoire 16 octets.
+    Format: pbkdf2$200000$salt_hex$hash_hex"""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac('sha256', p.encode(), salt, 200_000)
+    return f"pbkdf2$200000${salt.hex()}${dk.hex()}"
 
 def verify_pwd(p, h):
     if not h:
         return False
-    # Ancien hash SHA-256 : 64 chars hex
+    # Ancien format SHA-256 (64 chars hex) — comptes non encore migrés
     if len(h) == 64 and all(c in '0123456789abcdef' for c in h):
         ancien = hashlib.sha256((p + "salt2024").encode()).hexdigest()
         return hmac.compare_digest(ancien, h)
-    try:
-        return bcrypt.checkpw(p.encode(), h.encode())
-    except Exception:
-        return False
+    # Nouveau format PBKDF2
+    if h.startswith("pbkdf2$"):
+        try:
+            _, iter_s, salt_hex, hash_hex = h.split("$")
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(hash_hex)
+            dk = hashlib.pbkdf2_hmac('sha256', p.encode(), salt, int(iter_s))
+            return hmac.compare_digest(dk, expected)
+        except Exception:
+            return False
+    return False
 
 def _upgrade_hash(user_id, password, table='utilisateurs'):
+    """Migre un ancien hash (SHA-256) vers PBKDF2 après login réussi."""
     row = db.f1(f'SELECT password_hash FROM {table} WHERE id=%s', (user_id,))
-    if row and row['password_hash'] and len(row['password_hash']) == 64:
-        db.q(f'UPDATE {table} SET password_hash=%s WHERE id=%s',
-             (hash_pwd(password), user_id))
+    if row and row['password_hash']:
+        h = row['password_hash']
+        if not h.startswith("pbkdf2$"):
+            db.q(f'UPDATE {table} SET password_hash=%s WHERE id=%s',
+                 (hash_pwd(password), user_id))
 
 
 # ========== HELPERS ==========
@@ -417,7 +422,6 @@ def safe(obj, key, defaut="N/A"):
 
 
 def get_perms():
-    """Permissions effectives de l'admin connecté (principal = tout)."""
     all_true = {k: True for k in ['principal','supprimer_quiz','ajouter_admin',
                                     'bloquer_users','supprimer_users','supprimer_admins',
                                     'gerer_paiements','gerer_parametres']}
@@ -462,7 +466,6 @@ def creer_essai(user_id):
             VALUES (%s, NOW() + INTERVAL '1 day' * %s, 'essai')''', (user_id, jours))
 
 def prolonger_abo(user_id, jours):
-    """Ajoute `jours` à partir de la date de fin si elle est future, sinon d'aujourd'hui."""
     r = db.f1('''SELECT date_fin FROM abonnements
                  WHERE utilisateur_id=%s AND date_fin > NOW()
                  ORDER BY date_fin DESC LIMIT 1''', (user_id,))
@@ -843,8 +846,6 @@ if not st.session_state.logged_in:
             pwd = st.text_input("🔑 Mot de passe", type="password", key="login_pwd")
 
             if st.button("✨ Se Connecter", use_container_width=True, type="primary"):
-                connecte = False
-
                 # 1) Admin via secrets
                 try:
                     admins_secrets = st.secrets.get("admins", {})
@@ -951,7 +952,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
     </div>
     """, unsafe_allow_html=True)
 
-    # Timeout indicator
     user_full = db.f1('SELECT * FROM utilisateurs WHERE id=?', (uid,))
     if user_full:
         try:
@@ -974,7 +974,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         except Exception:
             pass
 
-    # Dashboard rapide
     nb_quiz = len(db.fa('SELECT id FROM resultats WHERE utilisateur_id=%s', (uid,)))
     moyenne = db.f1('SELECT AVG(pourcentage) AS m FROM resultats WHERE utilisateur_id=%s', (uid,))
     moy_val = f"{moyenne['m']:.0f}%" if moyenne and moyenne['m'] is not None else "—"
@@ -990,7 +989,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
 
     tab1, tab2, tab3 = st.tabs(["📚 Commencer un quiz", "📊 Mes résultats", "📝 Envoyer un feedback"])
 
-    # ===== TAB 1 : QUIZ =====
     with tab1:
         if not acces:
             afficher_paywall(uid, safe(st.session_state.user, 'prenom', 'Cher apprenant'))
@@ -1022,13 +1020,11 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
             else:
                 st.info("ℹ️ Aucun quiz disponible pour le moment.")
 
-            # ===== AFFICHAGE / CORRECTION =====
             for s in series:
                 if st.session_state.page == f"quiz_{s['id']}" and st.session_state.current_quizzes:
                     quizzes = st.session_state.current_quizzes
 
                     if st.session_state.quiz_submitted:
-                        # ⚡ UNIQUEMENT la correction + boutons (bug corrigé)
                         display_correction(quizzes, st.session_state.quiz_answers, s)
                         st.write(""); st.write("---"); st.write("")
                         col1, col2 = st.columns(2)
@@ -1111,7 +1107,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                                 st.session_state.current_series_id = s['id']
                                 st.rerun()
 
-    # ===== TAB 2 : RÉSULTATS =====
     with tab2:
         st.subheader("📊 Votre historique de résultats")
         resultats = db.fa('SELECT * FROM resultats WHERE utilisateur_id=? ORDER BY date_test DESC', (uid,))
@@ -1154,7 +1149,6 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
         else:
             st.caption("Pas encore assez de données pour un classement (3 quiz minimum par apprenant)")
 
-    # ===== TAB 3 : FEEDBACK =====
     with tab3:
         st.subheader("📝 Nous aimerions avoir votre avis")
         titre = st.text_input("Titre du feedback")
@@ -1187,7 +1181,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
     </div>
     """, unsafe_allow_html=True)
 
-    # Permissions
     perms = get_perms()
     est_admin_principal = perms['principal']
     peut_supprimer     = perms['supprimer_quiz']
@@ -1205,7 +1198,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         "📢 Panneau Maintenance", "💬 Feedback", "💰 Paiements", "⚙️ Paramètres"
     ])
 
-    # ===== DASHBOARD =====
     with admin_tabs[0]:
         st.markdown("<h2 style='color:#667eea;margin-bottom:30px;'>📊 Tableaux de Bord</h2>",
                     unsafe_allow_html=True)
@@ -1251,7 +1243,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     <span style="color:#10b981;font-weight:700;">{'🟢 Actif' if safe(u,'status') == 'actif' else '🔴 Bloqué'}</span>
                 </div>""", unsafe_allow_html=True)
 
-    # ===== SÉRIES =====
     with admin_tabs[1]:
         st.subheader("📚 Gestion des Séries")
         with st.expander("➕ Créer une nouvelle série"):
@@ -1288,7 +1279,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                 else:
                     st.markdown("<small style='color:#999;'>🔒 Non autorisé</small>", unsafe_allow_html=True)
 
-    # ===== QUIZZES =====
     with admin_tabs[2]:
         st.markdown("<h2 style='color:#667eea;'>🎯 Gestion des Quizzes</h2>", unsafe_allow_html=True)
         series = db.fa('SELECT * FROM series')
@@ -1316,7 +1306,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                                 <span style="color:#667eea;font-weight:700;font-size:0.9em;">✅ Réponse(s): {q['reponses_correctes']}</span>
                             </div>
                             <div style="margin-top:10px;">
-                                <small style="color:#999;">💡 {q['explication'][:80]}...</small>
+                                <small style="color:#999;">💡 {(q['explication'] or '')[:80]}...</small>
                             </div>
                         </div>""", unsafe_allow_html=True)
                     with col2:
@@ -1344,7 +1334,7 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                             with cd: new_d = st.text_input("Option D", value=q['option_d'])
                             new_correct = st.multiselect("Réponses correctes",
                                 ["A","B","C","D"], default=q['reponses_correctes'].split(","))
-                            new_expl = st.text_area("Explication", value=q['explication'], height=80)
+                            new_expl = st.text_area("Explication", value=q['explication'] or '', height=80)
                             cs, ccancel = st.columns(2)
                             with cs:
                                 if st.form_submit_button("💾 Sauvegarder", use_container_width=True, type="primary"):
@@ -1386,7 +1376,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                         else:
                             st.error("❌ Remplissez tous les champs obligatoires")
 
-    # ===== IMPORT =====
     with admin_tabs[3]:
         st.subheader("📤 Importer des Quizzes depuis CSV")
         uploaded_file = st.file_uploader("Sélectionnez un fichier CSV", type=["csv"])
@@ -1413,7 +1402,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             except Exception as e:
                 st.error(f"❌ Erreur: {str(e)}")
 
-    # ===== APPRENANTS =====
     with admin_tabs[4]:
         st.subheader("👥 Gestion des Apprenants")
         users = db.fa('SELECT * FROM utilisateurs')
@@ -1467,7 +1455,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.markdown("<small style='color:#999;'>🔒 Non autorisé</small>", unsafe_allow_html=True)
             st.divider()
 
-    # ===== ADMINISTRATEURS =====
     with admin_tabs[5]:
         st.subheader("👨‍💼 Gestion des Administrateurs")
         if peut_ajouter_admin:
@@ -1547,7 +1534,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.markdown("<small style='color:#999;'>—</small>", unsafe_allow_html=True)
             st.divider()
 
-    # ===== BASE DE DONNÉES =====
     with admin_tabs[6]:
         st.subheader("💾 Gestion de la Base de Données")
         if not est_admin_principal:
@@ -1589,7 +1575,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             with c5: st.metric("Résultats", len(db.fa('SELECT id FROM resultats')))
             with c6: st.metric("Paiements", len(db.fa('SELECT id FROM paiements')))
 
-    # ===== MAINTENANCE (outils) =====
     with admin_tabs[7]:
         st.markdown("<h2 style='color:#667eea;'>🔧 Interface de Maintenance</h2>",
                     unsafe_allow_html=True)
@@ -1648,7 +1633,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                         db.q('UPDATE utilisateurs SET tentatives_connexion=0')
                         st.success("✅ Tentatives réinitialisées!")
 
-    # ===== PANNEAU MAINTENANCE =====
     with admin_tabs[8]:
         st.markdown("<h2 style='color:#f39c12;'>📢 Panneau Maintenance</h2>", unsafe_allow_html=True)
         if not est_admin_principal:
@@ -1702,7 +1686,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     st.success("💾 Message sauvegardé!")
                     st.rerun()
 
-    # ===== FEEDBACK =====
     with admin_tabs[9]:
         st.subheader("💬 Feedbacks des Apprenants")
         feedbacks = db.fa('SELECT * FROM feedback ORDER BY date_feedback DESC')
@@ -1727,7 +1710,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         else:
             st.info("ℹ️ Aucun feedback")
 
-    # ===== PAIEMENTS =====
     with admin_tabs[10]:
         st.subheader("💰 Gestion des Paiements")
         if not perms['gerer_paiements']:
@@ -1787,7 +1769,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             else:
                 st.caption("Aucun historique")
 
-    # ===== PARAMÈTRES =====
     with admin_tabs[11]:
         st.subheader("⚙️ Paramètres de la Plateforme")
         if not perms['gerer_parametres']:
@@ -1846,7 +1827,6 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                         db.q("DELETE FROM offres WHERE id=%s", (o['id'],))
                         st.rerun()
 
-    # Logout
     st.write("---")
     if st.button("🚪 Déconnexion Admin", use_container_width=True):
         for k, v in defaults.items():
