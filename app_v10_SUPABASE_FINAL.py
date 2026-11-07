@@ -1,12 +1,14 @@
 """
-🎓 CAMPUS RÉUSSITE v11 — SÉCURISÉ + ABONNEMENTS ORANGE MONEY
-✅ Hash PBKDF2 (200 000 itérations, zéro dépendance) + migration auto SHA-256
-✅ Permissions admin réelles (self-delete bloqué, onglets conditionnels)
+🎓 CAMPUS RÉUSSITE v12 — IMAGES + CHOIX MULTIPLE + FOND
+✅ Hash PBKDF2 + migration auto SHA-256
+✅ Permissions admin réelles
 ✅ Essai gratuit 14 jours paramétrable
-✅ Paywall avec paiement Orange Money manuel (validation admin)
-✅ Offres paramétrables (montant ↔ durée)
+✅ Paywall Orange Money manuel (validation admin)
+✅ Offres paramétrables
 ✅ Dashboard apprenant + Top 10
-✅ Fix : correction quiz ne s'affiche plus sous le quiz
+✅ Fond d'image plein écran de la plateforme
+✅ Choix multiple (checkbox) pour les quiz multi-réponses
+✅ Images par série (upload admin)
 """
 
 import streamlit as st
@@ -16,11 +18,11 @@ import hashlib
 import hmac
 import time
 import os
+import base64
 from datetime import datetime, timedelta
-from base64 import b64encode
 
 st.set_page_config(
-    page_title="Campus Réussite v11",
+    page_title="Campus Réussite v12",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -29,8 +31,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     .logo-container { display:flex; justify-content:center; margin:20px 0;
                        animation: fadeInDown 0.8s ease-out; }
     .logo-container img { height:120px; border-radius:15px;
@@ -52,7 +53,7 @@ st.markdown("""
                  color:white; padding:35px; border-radius:18px; margin:20px 0;
                  cursor:pointer; transition: all 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
                  box-shadow: 0 8px 25px rgba(102,126,234,0.2);
-                 border: 2px solid transparent; }
+                 border: 2px solid transparent; overflow:hidden; }
     .card-quiz:hover { transform: translateY(-10px) scale(1.02);
                        box-shadow: 0 20px 50px rgba(102,126,234,0.4);
                        border: 2px solid rgba(255,255,255,0.3); }
@@ -111,7 +112,7 @@ st.markdown("""
     .stat-box-number { font-size:2.5em; font-weight:700; margin:10px 0; }
     .stat-box-label { font-size:0.95em; opacity:0.9; }
     .card { background:white; padding:20px; border-radius:12px; margin:15px 0;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow:hidden; }
     .paywall-om { background: linear-gradient(135deg,#ff7900,#ff9500); color:white;
                   padding:30px; border-radius:15px; text-align:center; margin:15px 0;
                   box-shadow: 0 10px 30px rgba(255,121,0,0.3); }
@@ -255,6 +256,7 @@ class DB:
                 """CREATE TABLE IF NOT EXISTS series (
                     id SERIAL PRIMARY KEY, nom TEXT UNIQUE,
                     description TEXT, nombre_questions INTEGER DEFAULT 0)""",
+                "ALTER TABLE series ADD COLUMN IF NOT EXISTS image_data TEXT",
                 """CREATE TABLE IF NOT EXISTS maintenance (
                     id SERIAL PRIMARY KEY, actif INTEGER DEFAULT 0,
                     message TEXT DEFAULT '', updated_at TIMESTAMP DEFAULT NOW())""",
@@ -373,10 +375,8 @@ class DB:
 db = DB()
 
 
-# ========== HASHING (PBKDF2-HMAC-SHA256 + migration) ==========
+# ========== HASHING (PBKDF2) ==========
 def hash_pwd(p):
-    """PBKDF2-HMAC-SHA256, 200 000 itérations, sel aléatoire 16 octets.
-    Format: pbkdf2$200000$salt_hex$hash_hex"""
     salt = os.urandom(16)
     dk = hashlib.pbkdf2_hmac('sha256', p.encode(), salt, 200_000)
     return f"pbkdf2$200000${salt.hex()}${dk.hex()}"
@@ -384,11 +384,9 @@ def hash_pwd(p):
 def verify_pwd(p, h):
     if not h:
         return False
-    # Ancien format SHA-256 (64 chars hex) — comptes non encore migrés
     if len(h) == 64 and all(c in '0123456789abcdef' for c in h):
         ancien = hashlib.sha256((p + "salt2024").encode()).hexdigest()
         return hmac.compare_digest(ancien, h)
-    # Nouveau format PBKDF2
     if h.startswith("pbkdf2$"):
         try:
             _, iter_s, salt_hex, hash_hex = h.split("$")
@@ -401,7 +399,6 @@ def verify_pwd(p, h):
     return False
 
 def _upgrade_hash(user_id, password, table='utilisateurs'):
-    """Migre un ancien hash (SHA-256) vers PBKDF2 après login réussi."""
     row = db.f1(f'SELECT password_hash FROM {table} WHERE id=%s', (user_id,))
     if row and row['password_hash']:
         h = row['password_hash']
@@ -537,7 +534,7 @@ def export_database():
             'resultats': db.fa('SELECT * FROM resultats'),
             'feedback': db.fa('SELECT * FROM feedback'),
             'export_date': datetime.now().isoformat(),
-            'version': '11.0'
+            'version': '12.0'
         }, indent=2, default=str)
     except Exception:
         return None
@@ -593,6 +590,58 @@ check_session_timeout()
 update_activity()
 
 
+# ========== IMAGE / FOND HELPERS ==========
+@st.cache_data
+def _get_bg_b64():
+    for fname in ["background.png", "background.jpg", "fond.png", "fond.jpg",
+                  "campus.png", "campus.jpg", "logo.png"]:
+        if os.path.exists(fname):
+            try:
+                with open(fname, "rb") as f:
+                    data = base64.b64encode(f.read()).decode()
+                ext = fname.split(".")[-1].lower()
+                mime = "jpeg" if ext in ("jpg", "jpeg") else "png"
+                return data, mime, fname
+            except Exception:
+                pass
+    return None, None, None
+
+
+def inject_background():
+    data, mime, fname = _get_bg_b64()
+    if not data:
+        return
+    st.markdown(f"""
+    <style>
+    .stApp, [data-testid="stAppViewContainer"] {{
+        background-image: 
+            linear-gradient(135deg, rgba(245,247,250,0.88) 0%, rgba(195,207,226,0.88) 100%),
+            url('data:image/{mime};base64,{data}');
+        background-size: cover;
+        background-position: center center;
+        background-attachment: fixed;
+        background-repeat: no-repeat;
+    }}
+    [data-testid="stHeader"] {{ background: transparent; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def process_series_image(uploaded_file, max_size=(800, 800)):
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(uploaded_file)
+        img.thumbnail(max_size, Image.LANCZOS)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=85, optimize=True)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
+
 # ========== AFFICHAGE HELPERS ==========
 def display_logo():
     if os.path.exists("logo.png"):
@@ -613,14 +662,19 @@ def display_correction(quizzes, quiz_answers, serie):
     score = 0
     details = []
     for q in quizzes:
-        user_answer = quiz_answers.get(q['id']) or 'Non répondu'
-        correct_answers = q['reponses_correctes'].split(",")
-        is_correct = user_answer in correct_answers
+        user_raw = quiz_answers.get(q['id']) or []
+        if isinstance(user_raw, str):
+            user_list = [user_raw] if user_raw else []
+        else:
+            user_list = list(user_raw)
+        correct_list = [c.strip() for c in q['reponses_correctes'].split(",")]
+        is_correct = set(user_list) == set(correct_list)
         if is_correct:
             score += 1
         details.append({
-            'question': q['question'], 'user_answer': user_answer,
-            'correct_answers': correct_answers,
+            'question': q['question'],
+            'user_list': user_list,
+            'correct_answers': correct_list,
             'explication': q['explication'], 'is_correct': is_correct,
             'options_dict': {'A': q['option_a'], 'B': q['option_b'],
                              'C': q['option_c'], 'D': q['option_d']}
@@ -687,18 +741,22 @@ def display_correction(quizzes, quiz_answers, serie):
 
         col1, col2 = st.columns(2)
         with col1:
-            if detail['user_answer'] != 'Non répondu':
-                user_option_text = detail['options_dict'].get(detail['user_answer'], 'Non trouvé')
+            if detail['user_list']:
                 border = "#10b981" if is_correct else "#ef4444"
                 bg = "#f0fdf4" if is_correct else "#fff5f5"
+                lines = "".join([
+                    f"<div style='background:white;padding:12px 15px;border-radius:6px;"
+                    f"border-left:4px solid {border};font-weight:600;color:#1a1a1a;"
+                    f"margin-top:8px;'>"
+                    f"<span style='font-size:1.1em;font-weight:700;color:{border};'>{a}</span>) "
+                    f"{detail['options_dict'].get(a, '')}</div>"
+                    for a in sorted(detail['user_list'])
+                ])
                 st.markdown(f"""
                 <div style="background:{bg};border-left:5px solid {border};padding:20px;
                             border-radius:8px;margin:15px 0;">
                     <div style="color:#667eea;font-weight:700;margin-bottom:10px;font-size:0.95em;">👤 Votre réponse</div>
-                    <div style="background:white;padding:15px;border-radius:6px;
-                                border-left:4px solid {border};font-weight:600;color:#1a1a1a;">
-                        <span style="font-size:1.1em;font-weight:700;color:{border};">{detail['user_answer']}</span>) {user_option_text}
-                    </div>
+                    {lines}
                 </div>""", unsafe_allow_html=True)
             else:
                 st.markdown(f"""
@@ -749,6 +807,7 @@ def afficher_banniere_maintenance():
         pass
 
 afficher_banniere_maintenance()
+inject_background()
 
 
 # ========== PAYWALL ==========
@@ -828,6 +887,7 @@ def afficher_paywall(uid, prenom):
 
 # ========== LOGIN PAGE ==========
 if not st.session_state.logged_in:
+    inject_background()
     display_logo()
     st.markdown("""
     <div class="header-main">
@@ -846,7 +906,6 @@ if not st.session_state.logged_in:
             pwd = st.text_input("🔑 Mot de passe", type="password", key="login_pwd")
 
             if st.button("✨ Se Connecter", use_container_width=True, type="primary"):
-                # 1) Admin via secrets
                 try:
                     admins_secrets = st.secrets.get("admins", {})
                     if email.lower() in admins_secrets and admins_secrets[email.lower()] == pwd:
@@ -859,7 +918,6 @@ if not st.session_state.logged_in:
                 except Exception:
                     pass
 
-                # 2) Admin en BD
                 admin = db.f1("SELECT * FROM admins WHERE email=? AND status='actif'", (email.lower(),))
                 if admin and verify_pwd(pwd, admin['password_hash']):
                     _upgrade_hash(admin['id'], pwd, 'admins')
@@ -869,7 +927,6 @@ if not st.session_state.logged_in:
                     st.success("✅ Connexion Admin réussie!")
                     st.rerun()
 
-                # 3) Apprenant
                 user = db.f1('SELECT * FROM utilisateurs WHERE email=?', (email.lower(),))
                 if user:
                     if user.get('bloque', 0) == 1:
@@ -1001,14 +1058,26 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                 for idx, s in enumerate(series):
                     quizzes = db.fa('SELECT * FROM quiz WHERE series_id=?', (s['id'],))
                     with cols[idx % 2]:
-                        st.markdown(f"""
-                        <div class="card-quiz">
-                            <div style="font-size:3em;">📚</div>
-                            <div class="card-quiz-title">{safe(s,'nom')}</div>
-                            <div class="card-quiz-desc">{s['description']}</div>
-                            <div class="card-quiz-count">🎯 {len(quizzes)} questions</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        if s.get('image_data'):
+                            st.markdown(f"""
+                            <div class="card-quiz" style="padding:0;overflow:hidden;">
+                                <img src="{s['image_data']}" style="width:100%;height:200px;object-fit:cover;">
+                                <div style="padding:30px;">
+                                    <div class="card-quiz-title">{safe(s,'nom')}</div>
+                                    <div class="card-quiz-desc">{s['description']}</div>
+                                    <div class="card-quiz-count">🎯 {len(quizzes)} questions</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div class="card-quiz">
+                                <div style="font-size:3em;">📚</div>
+                                <div class="card-quiz-title">{safe(s,'nom')}</div>
+                                <div class="card-quiz-desc">{s['description']}</div>
+                                <div class="card-quiz-count">🎯 {len(quizzes)} questions</div>
+                            </div>
+                            """, unsafe_allow_html=True)
                         if st.button(f"Commencer {s['nom']}", key=f"quiz_{s['id']}",
                                      use_container_width=True):
                             st.session_state.page = f"quiz_{s['id']}"
@@ -1072,11 +1141,22 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
 
                             options = ["A", "B", "C", "D"]
                             option_texts = [q['option_a'], q['option_b'], q['option_c'], q['option_d']]
-                            selected = st.radio(
-                                "Sélectionnez votre réponse:", options,
-                                format_func=lambda x, ot=option_texts: f"{x}) {ot[ord(x)-65]}",
-                                key=f"q_{q['id']}", label_visibility="collapsed", index=None)
-                            st.session_state.quiz_answers[q['id']] = selected
+                            correct_list = [c.strip() for c in q['reponses_correctes'].split(",")]
+                            is_multi = len(correct_list) > 1
+
+                            if is_multi:
+                                st.markdown("<div style='color:#667eea;font-weight:700;margin:5px 0 10px 0;font-size:0.95em;'>🔘 Plusieurs réponses possibles</div>", unsafe_allow_html=True)
+                                selected = []
+                                for letter, text in zip(options, option_texts):
+                                    if st.checkbox(f"{letter}) {text}", key=f"q_{q['id']}_{letter}"):
+                                        selected.append(letter)
+                                st.session_state.quiz_answers[q['id']] = selected
+                            else:
+                                selected = st.radio(
+                                    "Sélectionnez votre réponse:", options,
+                                    format_func=lambda x, ot=option_texts: f"{x}) {ot[ord(x)-65]}",
+                                    key=f"q_{q['id']}", label_visibility="collapsed", index=None)
+                                st.session_state.quiz_answers[q['id']] = [selected] if selected else []
                             st.write("")
 
                         st.write("---")
@@ -1097,8 +1177,10 @@ elif st.session_state.logged_in and not st.session_state.is_admin:
                                     st.stop()
                                 score = 0
                                 for q in quizzes:
-                                    ans = st.session_state.quiz_answers.get(q['id'])
-                                    if ans and ans in q['reponses_correctes'].split(","):
+                                    user_raw = st.session_state.quiz_answers.get(q['id']) or []
+                                    user_set = set(user_raw) if isinstance(user_raw, list) else ({user_raw} if user_raw else set())
+                                    correct_set = set(c.strip() for c in q['reponses_correctes'].split(","))
+                                    if user_set == correct_set:
                                         score += 1
                                 percentage = (score / len(quizzes)) * 100
                                 db.q('INSERT INTO resultats (utilisateur_id,series_id,score,total,pourcentage) VALUES (?,?,?,?,?)',
@@ -1248,9 +1330,15 @@ elif st.session_state.logged_in and st.session_state.is_admin:
         with st.expander("➕ Créer une nouvelle série"):
             nom = st.text_input("Nom de la série", key="serie_nom")
             desc = st.text_area("Description", key="serie_desc")
+            img_file = st.file_uploader("🖼️ Image de la série (optionnel — PNG/JPG, max 800x800)",
+                                        type=["png", "jpg", "jpeg"], key="serie_img_new")
+            if img_file:
+                st.image(img_file, caption="Aperçu", width=250)
             if st.button("Créer la série", use_container_width=True, type="primary"):
                 if nom:
-                    if db.q('INSERT INTO series (nom,description) VALUES (?,?)', (nom, desc)):
+                    img_data = process_series_image(img_file) if img_file else None
+                    if db.q('INSERT INTO series (nom,description,image_data) VALUES (?,?,?)',
+                            (nom, desc, img_data)):
                         st.success("✅ Série créée!")
                         st.rerun()
                     else:
@@ -1263,13 +1351,34 @@ elif st.session_state.logged_in and st.session_state.is_admin:
             quiz_count = len(db.fa('SELECT id FROM quiz WHERE series_id=?', (s['id'],)))
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"""
-                <div class="card">
-                    <h3>{s['nom']}</h3>
-                    <p style="color:#666;">{s['description']}</p>
-                    <small style="color:#999;">🎯 {quiz_count} quizzes</small>
-                </div>""", unsafe_allow_html=True)
+                if s.get('image_data'):
+                    st.markdown(f"""
+                    <div class="card" style="padding:0;overflow:hidden;">
+                        <img src="{s['image_data']}" style="width:100%;height:180px;object-fit:cover;">
+                        <div style="padding:20px;">
+                            <h3 style="color:#667eea;">{s['nom']}</h3>
+                            <p style="color:#666;">{s['description']}</p>
+                            <small style="color:#999;">🎯 {quiz_count} quizzes</small>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="card">
+                        <h3>{s['nom']}</h3>
+                        <p style="color:#666;">{s['description']}</p>
+                        <small style="color:#999;">🎯 {quiz_count} quizzes</small>
+                    </div>""", unsafe_allow_html=True)
             with col2:
+                with st.expander("🖼️ Image"):
+                    new_img = st.file_uploader("Changer", type=["png","jpg","jpeg"],
+                                               key=f"serie_img_edit_{s['id']}",
+                                               label_visibility="collapsed")
+                    if new_img:
+                        img_data = process_series_image(new_img)
+                        if img_data:
+                            db.q('UPDATE series SET image_data=? WHERE id=?', (img_data, s['id']))
+                            st.success("✅ Image mise à jour")
+                            st.rerun()
                 if peut_supprimer:
                     if st.button("🗑️ Supprimer", key=f"serie_del_{s['id']}", use_container_width=True):
                         db.q('DELETE FROM quiz WHERE series_id=?', (s['id'],))
@@ -1360,7 +1469,8 @@ elif st.session_state.logged_in and st.session_state.is_admin:
                     with c3: option_c = st.text_input("Option C)")
                     with c4: option_d = st.text_input("Option D)")
                     st.divider()
-                    reponses_correctes = st.multiselect("✅ Bonne(s) réponse(s)", ["A","B","C","D"], default=[])
+                    reponses_correctes = st.multiselect("✅ Bonne(s) réponse(s) — sélectionnez-en plusieurs si applicable",
+                        ["A","B","C","D"], default=[])
                     explication = st.text_area("💡 Explication", height=80)
                     st.divider()
                     submitted = st.form_submit_button("✅ Créer le Quiz", use_container_width=True, type="primary")
